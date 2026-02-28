@@ -7,7 +7,7 @@
 //  Simulator for visionOS may show unavailable; macOS target will show live webcam.
 //
 
-import AVFoundation
+@preconcurrency import AVFoundation
 import SwiftUI
 
 @MainActor
@@ -34,8 +34,8 @@ final class CameraFeedModel {
         case .authorized:
             configureAndStartSession()
         case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
-                Task { @MainActor in
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     if granted {
                         self.configureAndStartSession()
@@ -55,7 +55,7 @@ final class CameraFeedModel {
         let sessionToStop = session
         session = nil
         status = .idle
-        sessionQueue.async {
+        sessionQueue.async { [sessionToStop] in
             sessionToStop?.stopRunning()
         }
     }
@@ -88,9 +88,9 @@ final class CameraFeedModel {
         newSession.commitConfiguration()
         self.session = newSession
 
-        sessionQueue.async { [weak self] in
-            self?.session?.startRunning()
-            Task { @MainActor in
+        sessionQueue.async { [weak self, newSession] in
+            newSession.startRunning()
+            DispatchQueue.main.async { [weak self] in
                 self?.status = .running
             }
         }

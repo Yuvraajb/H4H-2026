@@ -52,16 +52,32 @@ class CrisisCopilotModel {
     private let greeting = "I'm Crisis Copilot. Tell me what's happening. If this is life-threatening, call emergency services now."
     private let wrapUp = "Session marked resolved. If you need to report again, start a new emergency."
 
+    private var sessionId: String?
+    private let backendService = BackendService()
+
     func startEmergency() {
         state = .active
         messages = []
-        messages.append(ChatMessage(role: .assistant, text: greeting, timestamp: Date()))
+        sessionId = nil
         suggestedActions = Self.suggestedActions(for: scenario)
+        messages.append(ChatMessage(role: .assistant, text: greeting, timestamp: Date()))
+
+        Task { @MainActor in
+            if let result = await backendService.startSession() {
+                sessionId = result.sessionId
+            }
+        }
     }
 
     func markResolved() {
         state = .resolved
         messages.append(ChatMessage(role: .assistant, text: wrapUp, timestamp: Date()))
+        if let sid = sessionId {
+            Task { @MainActor in
+                _ = await backendService.generateReport(sessionId: sid)
+                // Optionally save or show report; for now we just trigger generation
+            }
+        }
     }
 
     func reset() {
@@ -69,14 +85,23 @@ class CrisisCopilotModel {
         messages = []
         draftText = ""
         suggestedActions = []
+        sessionId = nil
     }
 
     func sendUserMessage(_ text: String) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
         messages.append(ChatMessage(role: .user, text: t, timestamp: Date()))
-        let stub = stubResponse(for: scenario)
-        messages.append(ChatMessage(role: .assistant, text: stub, timestamp: Date()))
+
+        Task { @MainActor in
+            let result = await backendService.sendMessage(sessionId: sessionId, text: t)
+            if let result {
+                sessionId = result.sessionId
+                messages.append(ChatMessage(role: .assistant, text: result.responseText, timestamp: Date()))
+            } else {
+                messages.append(ChatMessage(role: .assistant, text: stubResponse(for: scenario), timestamp: Date()))
+            }
+        }
     }
 
     func simulateVoiceInput() {

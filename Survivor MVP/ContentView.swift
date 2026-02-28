@@ -64,7 +64,7 @@ struct ContentView: View {
                     }
                 }
             }
-        } else {
+        } else { 
             Color.black
         }
     }

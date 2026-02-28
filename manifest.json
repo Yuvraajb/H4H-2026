@@ -1,0 +1,11 @@
+{
+  "name": "GuideVR",
+  "short_name": "GuideVR",
+  "description": "AI-powered spatial assistant for first responders",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "any",
+  "icons": []
+}

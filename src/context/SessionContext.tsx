@@ -1,12 +1,16 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { Session, SessionMode, TranscriptEntry, ResponseMetadata, UrgencyLevel, TrainingScenario, TrainingScore } from '../types';
 
+export type AppView = 'landing' | 'training' | 'session';
+
 interface SessionContextType {
   session: Session | null;
   currentUrgency: UrgencyLevel;
   currentImage: string | null;
   isSessionActive: boolean;
   mode: SessionMode;
+  view: AppView;
+  setView: (view: AppView) => void;
   trainingScore: TrainingScore | null;
   startSession: (mode: SessionMode, scenario?: string) => void;
   endSession: () => void;
@@ -49,11 +53,12 @@ const mockSession: Session = {
 };
 
 export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [session, setSession] = useState<Session | null>(mockSession);
+  const [session, setSession] = useState<Session | null>(null);
   const [currentUrgency, setCurrentUrgency] = useState<UrgencyLevel>('medium');
   const [currentImage, setCurrentImage] = useState<string | null>(null);
-  const [isSessionActive, setIsSessionActive] = useState<boolean>(true);
+  const [isSessionActive, setIsSessionActive] = useState<boolean>(false);
   const [mode, setMode] = useState<SessionMode>('live');
+  const [view, setView] = useState<AppView>('landing');
   const [trainingScore, setTrainingScore] = useState<TrainingScore | null>(null);
 
   const startSession = (newMode: SessionMode, scenario?: string) => {
@@ -112,6 +117,8 @@ export const SessionProvider: React.FC<{ children: ReactNode }> = ({ children })
         currentImage,
         isSessionActive,
         mode,
+        view,
+        setView,
         trainingScore,
         startSession,
         endSession,

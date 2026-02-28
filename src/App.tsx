@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { SessionProvider } from './context/SessionContext';
 import LandingScreen from './components/LandingScreen';
+import TrainingModeScreen from './components/TrainingModeScreen';
 import HUDPanel from './components/HUDPanel';
 import ImagePanel from './components/ImagePanel';
 import TranscriptPanel from './components/TranscriptPanel';
@@ -17,14 +18,18 @@ const initializeWebSpatial = () => {
 };
 
 const AppContent: React.FC = () => {
-  const { isSessionActive, mode } = useSession();
+  const { isSessionActive, mode, view } = useSession();
 
   useEffect(() => {
     initializeWebSpatial();
   }, []);
 
-  if (!isSessionActive) {
+  if (view === 'landing') {
     return <LandingScreen />;
+  }
+
+  if (view === 'training') {
+    return <TrainingModeScreen />;
   }
 
   return (

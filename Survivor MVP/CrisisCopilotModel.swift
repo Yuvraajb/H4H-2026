@@ -2,42 +2,44 @@
 //  CrisisCopilotModel.swift
 //  Survivor MVP
 //
-//  Crisis Copilot: app state, scenario, chat messages, stub responses.
+//  Personal Doctor — conversation state, messages, and backend integration.
 //
 
 import SwiftUI
 
-enum CrisisAppState: String, CaseIterable {
-    case idle
-    case active
-    case resolved
-}
-
+enum CrisisAppState: String, CaseIterable { case idle, active, resolved }
 enum CrisisScenario: String, CaseIterable {
-    case medical = "Medical"
-    case fire = "Fire"
-    case earthquake = "Earthquake"
-    case suspicious = "Suspicious Activity"
-    case other = "Other"
+    case medical = "Medical"; case fire = "Fire"
+    case earthquake = "Earthquake"; case suspicious = "Suspicious Activity"; case other = "Other"
 }
+enum InputMode: String, CaseIterable { case voice, touch }
 
-enum InputMode: String, CaseIterable {
-    case voice
-    case touch
+// MARK: - Data types
+
+struct ChatStep: Identifiable {
+    let id = UUID()
+    let instruction: String
+    let imageURL: URL?
 }
 
 struct ChatMessage: Identifiable {
     let id = UUID()
     let role: ChatRole
-    let text: String
+    let text: String          // spoken text (also shown in chat)
+    let steps: [ChatStep]     // empty for Q&A turns; populated during treatment phase
     let timestamp: Date
 
-    enum ChatRole {
-        case user
-        case assistant
-        case system
+    init(role: ChatRole, text: String, steps: [ChatStep] = [], timestamp: Date = Date()) {
+        self.role = role
+        self.text = text
+        self.steps = steps
+        self.timestamp = timestamp
     }
+
+    enum ChatRole { case user, assistant, system }
 }
+
+// MARK: - Model
 
 @MainActor
 @Observable
@@ -49,6 +51,9 @@ class CrisisCopilotModel {
     var draftText: String = ""
     var suggestedActions: [String] = []
 
+    /// Set from ContentView so each user message can attach a camera frame.
+    weak var cameraModel: CameraFeedModel?
+
     private let greeting = "Hey! I'm your personal doctor. What's going on — tell me what's happening and I'll help you through it."
     private let wrapUp = "Session marked resolved. If you need to report again, start a new emergency."
 
@@ -59,8 +64,8 @@ class CrisisCopilotModel {
         state = .active
         messages = []
         sessionId = nil
-        suggestedActions = Self.suggestedActions(for: scenario)
-        messages.append(ChatMessage(role: .assistant, text: greeting, timestamp: Date()))
+        suggestedActions = []
+        messages.append(ChatMessage(role: .assistant, text: greeting))
 
         Task { @MainActor in
             if let result = await backendService.startSession() {
@@ -71,12 +76,9 @@ class CrisisCopilotModel {
 
     func markResolved() {
         state = .resolved
-        messages.append(ChatMessage(role: .assistant, text: wrapUp, timestamp: Date()))
+        messages.append(ChatMessage(role: .assistant, text: wrapUp))
         if let sid = sessionId {
-            Task { @MainActor in
-                _ = await backendService.generateReport(sessionId: sid)
-                // Optionally save or show report; for now we just trigger generation
-            }
+            Task { @MainActor in _ = await backendService.generateReport(sessionId: sid) }
         }
     }
 
@@ -91,22 +93,28 @@ class CrisisCopilotModel {
     func sendUserMessage(_ text: String) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
-        if state == .idle {
-            state = .active
-            suggestedActions = Self.suggestedActions(for: scenario)
-        }
-        messages.append(ChatMessage(role: .user, text: t, timestamp: Date()))
+        if state == .idle { state = .active }
+        messages.append(ChatMessage(role: .user, text: t))
         draftText = ""
 
+        // Capture camera frame to attach as visual context
+        let imageData = cameraModel?.captureFrame()
+
         Task { @MainActor in
-            let result = await backendService.sendMessage(sessionId: sessionId, text: t)
+            let result = await backendService.sendMessage(sessionId: sessionId, text: t, imageData: imageData)
             if let result {
                 sessionId = result.sessionId
-                messages.append(ChatMessage(role: .assistant, text: result.responseText, timestamp: Date()))
+                let msg = ChatMessage(
+                    role: .assistant,
+                    text: result.responseText,
+                    steps: result.steps.compactMap { step in
+                        ChatStep(instruction: step.instruction, imageURL: step.imageURL.flatMap(URL.init))
+                    }
+                )
+                messages.append(msg)
             } else {
-                let fallback = stubResponse(for: scenario)
-                let withHint = fallback + "\n\n(Backend unreachable. Start it: cd backend && python3 run.py. On a physical device? Set BackendService.deviceBaseURLOverride to your Mac’s IP, e.g. \"http://192.168.1.x:8000\".)"
-                messages.append(ChatMessage(role: .assistant, text: withHint, timestamp: Date()))
+                let fallback = "I'm having trouble reaching the AI. Make sure the backend is running at port 8000."
+                messages.append(ChatMessage(role: .assistant, text: fallback))
             }
         }
     }
@@ -126,37 +134,7 @@ class CrisisCopilotModel {
     func clearChat() {
         messages = []
         if state == .active {
-            messages.append(ChatMessage(role: .assistant, text: greeting, timestamp: Date()))
-        }
-    }
-
-    private func stubResponse(for s: CrisisScenario) -> String {
-        switch s {
-        case .medical:
-            return "Understood. Is the person responsive and breathing normally?"
-        case .fire:
-            return "Are you indoors or outdoors? Do you see flames or smoke?"
-        case .earthquake:
-            return "Are you in a safe location away from glass? Any injuries?"
-        case .suspicious:
-            return "Where are you? Can you get to a safe place without approaching the person?"
-        case .other:
-            return "Tell me a bit more. What do you see or hear right now?"
-        }
-    }
-
-    private static func suggestedActions(for scenario: CrisisScenario) -> [String] {
-        switch scenario {
-        case .medical:
-            return ["Check responsiveness", "Check breathing", "Call emergency services if not breathing"]
-        case .fire:
-            return ["Evacuate if unsafe", "Avoid smoke", "Call emergency services"]
-        case .earthquake:
-            return ["Drop, cover, hold on", "Check injuries", "Watch for aftershocks"]
-        case .suspicious:
-            return ["Move to safety", "Do not confront", "Call authorities"]
-        case .other:
-            return ["Stay calm", "Call emergency services if needed"]
+            messages.append(ChatMessage(role: .assistant, text: greeting))
         }
     }
 }

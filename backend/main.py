@@ -1,11 +1,14 @@
 """
-Crisis Copilot FastAPI backend.
-- POST /api/chat — conversation with LLM, session stored in memory
-- GET/POST /api/tts — ElevenLabs TTS proxy
+Personal Doctor FastAPI backend.
+- POST /api/chat      — conversation with vision-capable LLM; returns steps + image URLs
+- GET  /api/images    — Wikipedia image lookup for a query
+- GET/POST /api/tts   — ElevenLabs TTS proxy
+- POST /api/stt       — ElevenLabs STT proxy
 - POST /api/report/{session_id}/generate — PDF report
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -20,22 +23,20 @@ from pydantic import BaseModel
 from services.session_manager import session_manager
 from services import llm_service
 
-# Load .env from backend directory so it works when run from project root or backend/
 _env_path = Path(__file__).resolve().parent / ".env"
 load_dotenv(_env_path)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Log so you can confirm .env is loaded when running the backend
     provider = os.getenv("LLM_PROVIDER", "groq").lower()
     groq_ok = bool(os.getenv("GROQ_API_KEY"))
-    print(f"[Crisis Copilot] LLM_PROVIDER={provider}, GROQ_API_KEY set={groq_ok}")
+    eleven_ok = bool(os.getenv("ELEVENLABS_API_KEY"))
+    print(f"[Personal Doctor] LLM={provider} groq={groq_ok} elevenlabs={eleven_ok}")
     yield
-    # cleanup if needed
 
 
-app = FastAPI(title="Crisis Copilot API", lifespan=lifespan)
+app = FastAPI(title="Personal Doctor API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -46,15 +47,18 @@ app.add_middleware(
 )
 
 
-# --- Request/Response models ---
+# ---------------------------------------------------------------------------
+# Request / Response models
+# ---------------------------------------------------------------------------
 
 class ChatRequest(BaseModel):
     session_id: Optional[str] = None
     message: str
+    image_base64: Optional[str] = None   # base64 JPEG from camera frame
 
 
 class ChatResponse(BaseModel):
-    response: dict  # { spoken_text, metadata }
+    response: dict
     session_id: str
 
 
@@ -62,7 +66,9 @@ class TTSRequest(BaseModel):
     text: str
 
 
-# --- Chat endpoint ---
+# ---------------------------------------------------------------------------
+# Chat endpoint
+# ---------------------------------------------------------------------------
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
@@ -72,10 +78,14 @@ async def chat(req: ChatRequest):
     if not session_id:
         session_id = session_manager.create_session()
         if not message:
+            # Opening greeting (no image needed)
+            greeting = "Hey! I'm your personal doctor. What's going on — tell me what's happening and I'll help you through it."
             return ChatResponse(
                 response={
-                    "spoken_text": "I'm Crisis Copilot. Tell me what's happening. If this is life-threatening, call emergency services now.",
-                    "metadata": {"step": 0, "urgency": "medium", "image_query": None, "category": "other", "display_text": "Session started."},
+                    "spoken_text": greeting,
+                    "phase": "questioning",
+                    "steps": [],
+                    "metadata": {"urgency": "low", "diagnosis": None, "call_emergency": False},
                 },
                 session_id=session_id,
             )
@@ -85,7 +95,6 @@ async def chat(req: ChatRequest):
 
     session = session_manager.get_session(session_id)
     if not session:
-        # Session lost (e.g. backend restarted with in-memory store). Start fresh so client gets 200 instead of 404.
         session_id = session_manager.create_session()
         session = session_manager.get_session(session_id)
 
@@ -97,25 +106,61 @@ async def chat(req: ChatRequest):
     ]
 
     try:
-        result = await llm_service.get_response(messages)
+        result = await llm_service.get_response(messages, image_b64=req.image_base64)
     except Exception as e:
-        # Return 200 with error message so the app can show it (connection worked, LLM failed)
-        spoken = f"AI temporarily unavailable: {str(e)} Check GEMINI_API_KEY in backend/.env and that the backend is running."
-        metadata = {"step": 0, "urgency": "low", "image_query": None, "category": "other", "display_text": "Retry or check backend."}
-        session_manager.append_message(session_id, "assistant", spoken)
-        session_manager.append_metadata(session_id, metadata)
-        return ChatResponse(response={"spoken_text": spoken, "metadata": metadata}, session_id=session_id)
+        spoken = f"I'm having trouble reaching the AI right now. Please try again. ({e!s})"
+        return ChatResponse(
+            response={"spoken_text": spoken, "phase": "questioning", "steps": [], "metadata": {"urgency": "low", "diagnosis": None, "call_emergency": False}},
+            session_id=session_id,
+        )
 
     spoken = result.get("spoken_text", "")
+    phase = result.get("phase", "questioning")
+    steps_raw: list[dict] = result.get("steps") or []
     metadata = result.get("metadata") or {}
 
     session_manager.append_message(session_id, "assistant", spoken)
-    session_manager.append_metadata(session_id, metadata)
 
-    return ChatResponse(response={"spoken_text": spoken, "metadata": metadata}, session_id=session_id)
+    # Fetch Wikipedia images for each step concurrently
+    steps: list[dict] = []
+    if steps_raw:
+        from services.image_service import get_image_url
+        queries = [s.get("image_query", "") for s in steps_raw]
+        image_urls = await asyncio.gather(*[get_image_url(q) for q in queries])
+        steps = [
+            {"instruction": s.get("instruction", ""), "image_url": url}
+            for s, url in zip(steps_raw, image_urls)
+        ]
+
+    return ChatResponse(
+        response={
+            "spoken_text": spoken,
+            "phase": phase,
+            "steps": steps,
+            "metadata": metadata,
+        },
+        session_id=session_id,
+    )
 
 
-# --- TTS endpoint (ElevenLabs proxy) ---
+# ---------------------------------------------------------------------------
+# Image lookup (Wikipedia)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/images")
+async def image_lookup(q: str = ""):
+    if not q.strip():
+        raise HTTPException(status_code=400, detail="Missing query")
+    from services.image_service import get_image_url
+    url = await get_image_url(q.strip())
+    if not url:
+        raise HTTPException(status_code=404, detail="No image found")
+    return {"url": url}
+
+
+# ---------------------------------------------------------------------------
+# TTS endpoint
+# ---------------------------------------------------------------------------
 
 @app.get("/api/tts")
 async def tts_get(text: str = ""):
@@ -137,10 +182,12 @@ async def _tts_response(text: str):
         data, content_type = await get_audio_bytes(text)
         return Response(content=data, media_type=content_type)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"TTS error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"TTS error: {e!s}")
 
 
-# --- STT endpoint (ElevenLabs proxy) ---
+# ---------------------------------------------------------------------------
+# STT endpoint
+# ---------------------------------------------------------------------------
 
 @app.post("/api/stt")
 async def speech_to_text(request: Request):
@@ -153,31 +200,33 @@ async def speech_to_text(request: Request):
         text = await transcribe_audio(audio_data, content_type)
         return {"text": text}
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"STT error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"STT error: {e!s}")
 
 
-# --- Report endpoint ---
+# ---------------------------------------------------------------------------
+# Report endpoint
+# ---------------------------------------------------------------------------
 
 @app.post("/api/report/{session_id}/generate")
 async def generate_report(session_id: str):
     session = session_manager.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-
     from services.report_generator import generate_pdf
     try:
         pdf_bytes = generate_pdf(session)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Report error: {str(e)}")
-
+        raise HTTPException(status_code=500, detail=f"Report error: {e!s}")
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="crisis-copilot-report-{session_id[:8]}.pdf"'},
+        headers={"Content-Disposition": f'attachment; filename="report-{session_id[:8]}.pdf"'},
     )
 
 
-# --- Health ---
+# ---------------------------------------------------------------------------
+# Health
+# ---------------------------------------------------------------------------
 
 @app.get("/health")
 async def health():

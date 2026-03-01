@@ -2,11 +2,12 @@
 //  BackendService.swift
 //  Survivor MVP
 //
-//  API client for Crisis Copilot backend: chat, TTS, report.
-//  Fallback to stubs in model when backend is unavailable.
+//  API client: chat (with optional camera frame), TTS, STT, report.
 //
 
 import Foundation
+
+// MARK: - Response types
 
 struct ChatResponsePayload: Decodable {
     let response: ResponsePayload
@@ -14,17 +15,35 @@ struct ChatResponsePayload: Decodable {
 
     struct ResponsePayload: Decodable {
         let spoken_text: String
+        let steps: [StepPayload]?
         let metadata: MetadataPayload?
     }
 
+    struct StepPayload: Decodable {
+        let instruction: String
+        let image_url: String?
+    }
+
     struct MetadataPayload: Decodable {
-        let step: Int?
         let urgency: String?
+        let diagnosis: String?
+        let call_emergency: Bool?
+        // Legacy fields kept for backward compatibility
+        let step: Int?
         let image_query: String?
         let category: String?
         let display_text: String?
     }
 }
+
+// MARK: - Swift value types returned to callers
+
+struct StepResult {
+    let instruction: String
+    let imageURL: String?
+}
+
+// MARK: - BackendService
 
 @MainActor
 final class BackendService {
@@ -32,11 +51,8 @@ final class BackendService {
     private let session: URLSession
     private let decoder: JSONDecoder
 
-    /// Use 127.0.0.1 so simulator can reach backend (HTTP allowed via NSAllowsLocalNetworking in Info.plist).
     private static let defaultBaseURLValue = "http://127.0.0.1:8000"
-    /// Fallback for environments where 127.0.0.1 is not reachable.
     private static let fallbackBaseURLValue = "http://localhost:8000"
-    /// When testing on a physical device, set this to your Mac’s IP (e.g. "http://192.168.1.100:8000") so the device can reach the backend.
     static var deviceBaseURLOverride: String?
 
     init(baseURL: String? = nil) {
@@ -46,84 +62,82 @@ final class BackendService {
         self.decoder = JSONDecoder()
     }
 
-    /// POST /api/chat — send user message, get AI response and session_id.
-    /// Tries baseURL then fallback (localhost). Returns nil on any failure (network, decode, 4xx/5xx).
-    func sendMessage(sessionId: String?, text: String) async -> (responseText: String, metadata: ChatResponsePayload.MetadataPayload?, sessionId: String)? {
-        var urlsToTry = [baseURL, Self.fallbackBaseURLValue.trimmingCharacters(in: CharacterSet(charactersIn: "/"))]
-        if let deviceURL = Self.deviceBaseURLOverride?.trimmingCharacters(in: CharacterSet(charactersIn: "/")), !urlsToTry.contains(deviceURL) {
-            urlsToTry.append(deviceURL)
-        }
-        for base in urlsToTry {
-            if let result = await performChat(baseURL: base, sessionId: sessionId, text: text) {
+    // MARK: - Chat
+
+    /// Sends a user message (and optional JPEG camera frame) and returns the AI response with steps.
+    func sendMessage(
+        sessionId: String?,
+        text: String,
+        imageData: Data? = nil
+    ) async -> (responseText: String, steps: [StepResult], metadata: ChatResponsePayload.MetadataPayload?, sessionId: String)? {
+        let urls = [baseURL, Self.fallbackBaseURLValue.trimmingCharacters(in: CharacterSet(charactersIn: "/"))]
+        for base in urls {
+            if let result = await performChat(baseURL: base, sessionId: sessionId, text: text, imageData: imageData) {
                 return result
             }
         }
         return nil
     }
 
-    private func performChat(baseURL: String, sessionId: String?, text: String) async -> (responseText: String, metadata: ChatResponsePayload.MetadataPayload?, sessionId: String)? {
+    private func performChat(
+        baseURL: String,
+        sessionId: String?,
+        text: String,
+        imageData: Data?
+    ) async -> (responseText: String, steps: [StepResult], metadata: ChatResponsePayload.MetadataPayload?, sessionId: String)? {
         guard let url = URL(string: "\(baseURL)/api/chat") else { return nil }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        let body: [String: Any?] = [
-            "session_id": sessionId,
-            "message": text,
-        ]
-        let validBody = body.compactMapValues { $0 }
-        guard let bodyData = try? JSONSerialization.data(withJSONObject: validBody) else { return nil }
-        request.httpBody = bodyData
         request.timeoutInterval = 30
+
+        var body: [String: Any] = ["message": text]
+        if let sid = sessionId { body["session_id"] = sid }
+        if let img = imageData { body["image_base64"] = img.base64EncodedString() }
+
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else { return nil }
+        request.httpBody = bodyData
 
         do {
             let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-                return nil
-            }
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return nil }
             let decoded = try decoder.decode(ChatResponsePayload.self, from: data)
-            return (
-                decoded.response.spoken_text,
-                decoded.response.metadata,
-                decoded.session_id
-            )
+            let steps = (decoded.response.steps ?? []).map {
+                StepResult(instruction: $0.instruction, imageURL: $0.image_url)
+            }
+            return (decoded.response.spoken_text, steps, decoded.response.metadata, decoded.session_id)
         } catch {
             return nil
         }
     }
 
-    /// POST /api/chat with empty message to start session and get greeting + session_id.
+    /// Sends an empty message to start a new session and get the opening greeting.
     func startSession() async -> (greeting: String, sessionId: String)? {
         let result = await sendMessage(sessionId: nil, text: "")
         guard let result else { return nil }
         return (result.responseText, result.sessionId)
     }
 
-    /// GET /api/tts?text=... — returns audio data (mp3) or nil.
+    // MARK: - TTS
+
     func requestTTS(text: String) async -> Data? {
         guard let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "\(baseURL)/api/tts?text=\(encoded)") else {
-            return nil
-        }
+              let url = URL(string: "\(baseURL)/api/tts?text=\(encoded)") else { return nil }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 30
-
         do {
             let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-                return nil
-            }
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return nil }
             return data
-        } catch {
-            return nil
-        }
+        } catch { return nil }
     }
 
-    /// POST /api/stt — sends raw WAV bytes, returns transcribed text or nil.
+    // MARK: - STT
+
     func speechToText(audioData: Data) async -> String? {
-        for base in [baseURL, Self.fallbackBaseURLValue.trimmingCharacters(in: CharacterSet(charactersIn: "/"))] {
+        let urls = [baseURL, Self.fallbackBaseURLValue.trimmingCharacters(in: CharacterSet(charactersIn: "/"))]
+        for base in urls {
             if let text = await performSTT(baseURL: base, audioData: audioData) { return text }
         }
         return nil
@@ -141,26 +155,20 @@ final class BackendService {
             guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return nil }
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             return json?["text"] as? String
-        } catch {
-            return nil
-        }
+        } catch { return nil }
     }
 
-    /// POST /api/report/{session_id}/generate — returns PDF data or nil.
+    // MARK: - Report
+
     func generateReport(sessionId: String) async -> Data? {
-        let url = URL(string: "\(baseURL)/api/report/\(sessionId)/generate")!
+        guard let url = URL(string: "\(baseURL)/api/report/\(sessionId)/generate") else { return nil }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = 60
-
         do {
             let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-                return nil
-            }
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return nil }
             return data
-        } catch {
-            return nil
-        }
+        } catch { return nil }
     }
 }

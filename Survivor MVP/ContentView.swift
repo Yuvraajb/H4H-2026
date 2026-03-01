@@ -28,6 +28,7 @@ struct ContentView: View {
         .onAppear {
             cameraModel.start()
             voiceOrbModel.copilotModel = model
+            model.cameraModel = cameraModel   // give model access to camera frames
             Task { await voiceOrbModel.autoGreet() }
         }
         .onDisappear { cameraModel.stop() }
@@ -305,7 +306,7 @@ struct VoicePanel: View {
     }
 }
 
-// MARK: - Transcript bubble (read-only)
+// MARK: - Transcript bubble (read-only, step-aware)
 
 private struct TranscriptBubble: View {
     let message: ChatMessage
@@ -313,16 +314,32 @@ private struct TranscriptBubble: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             if message.role == .user { Spacer(minLength: 32) }
-            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 3) {
-                Text(message.text)
-                    .font(.callout)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(bubbleBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 6) {
+                // Spoken text
+                if !message.text.isEmpty {
+                    Text(message.text)
+                        .font(.callout)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(bubbleBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+
+                // Treatment steps with Wikipedia images
+                if !message.steps.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(Array(message.steps.enumerated()), id: \.element.id) { idx, step in
+                            StepCard(number: idx + 1, step: step)
+                        }
+                    }
+                    .padding(.top, 4)
+                }
+
                 Text(message.timestamp, style: .time)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+
             if message.role != .user { Spacer(minLength: 32) }
         }
     }
@@ -331,6 +348,54 @@ private struct TranscriptBubble: View {
         message.role == .user
             ? AnyShapeStyle(Color.accentColor.opacity(0.22))
             : AnyShapeStyle(Color.primary.opacity(0.06))
+    }
+}
+
+private struct StepCard: View {
+    let number: Int
+    let step: ChatStep
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                // Number badge
+                Text("\(number)")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.white)
+                    .frame(width: 22, height: 22)
+                    .background(Color.accentColor, in: Circle())
+
+                Text(step.instruction)
+                    .font(.callout)
+                    .fontWeight(.medium)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // Wikipedia illustration
+            if let url = step.imageURL {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let img):
+                        img.resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(maxWidth: 240, maxHeight: 160)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    case .failure:
+                        EmptyView()
+                    case .empty:
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.primary.opacity(0.05))
+                            .frame(width: 240, height: 120)
+                            .overlay(ProgressView().scaleEffect(0.6))
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 

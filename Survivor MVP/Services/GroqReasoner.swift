@@ -16,7 +16,7 @@ final class GroqReasoner: CopilotReasoner {
         self.backend = backend
     }
 
-    func respond(systemPrompt: String, conversation: [ReasonerMessage], imageBase64JPEG: String?) async throws -> String {
+    func respond(systemPrompt: String, conversation: [ReasonerMessage], imageBase64JPEG: String?) async throws -> (responseText: String, metadata: ChatResponsePayload.MetadataPayload?) {
         guard let last = conversation.last, last.role == "user" else {
             throw ReasonerError.noUserMessage
         }
@@ -30,7 +30,7 @@ final class GroqReasoner: CopilotReasoner {
             throw ReasonerError.backendUnavailable
         }
         sessionId = result.sessionId
-        return result.responseText
+        return (result.responseText, result.metadata)
     }
 
     func resetSession() {

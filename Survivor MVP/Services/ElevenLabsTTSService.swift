@@ -28,18 +28,19 @@ final class ElevenLabsTTSService: TextToSpeech {
 
     /// Load ELEVENLABS_API_KEY from a .env file so keys stay out of source.
     private static func loadAPIKeyFromEnvFile() -> String? {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
         let cwd = FileManager.default.currentDirectoryPath
         let cwdSurvivor = (cwd as NSString).appendingPathComponent("Survivor MVP")
-        let homeDesktop = (home as NSString).appendingPathComponent("Desktop")
-        let projectPath = (homeDesktop as NSString).appendingPathComponent("SurvivorMVP/Survivor MVP")
-        let candidates: [String] = [
+        var candidates: [String] = [
             cwd,
             cwdSurvivor,
             Bundle.main.bundleURL.deletingLastPathComponent().path,
-            home,
-            projectPath,
         ]
+        #if os(macOS)
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let homeDesktop = (home as NSString).appendingPathComponent("Desktop")
+        let projectPath = (homeDesktop as NSString).appendingPathComponent("SurvivorMVP/Survivor MVP")
+        candidates.append(contentsOf: [home, projectPath])
+        #endif
         let filenames = [".env", ".crisiscopilot_env"]
         for dir in candidates {
             for name in filenames {

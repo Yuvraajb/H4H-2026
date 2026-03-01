@@ -145,4 +145,36 @@ final class BackendService {
             return nil
         }
     }
+
+    /// POST /api/step-image — get instructional image from web. Returns (imageData, contentType) or nil.
+    func requestStepImage(query: String, displayText: String? = nil, context: String? = nil) async -> (imageData: Data, contentType: String)? {
+        guard let url = URL(string: "\(baseURL)/api/step-image") else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        var body: [String: Any?] = ["image_query": query]
+        if let displayText = displayText { body["display_text"] = displayText }
+        if let context = context { body["context"] = context }
+        let validBody = body.compactMapValues { $0 }
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: validBody) else { return nil }
+        request.httpBody = bodyData
+        request.timeoutInterval = 30
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                return nil
+            }
+            struct StepImagePayload: Decodable {
+                let image_base64: String
+                let content_type: String
+            }
+            let decoded = try decoder.decode(StepImagePayload.self, from: data)
+            guard let imageData = Data(base64Encoded: decoded.image_base64) else { return nil }
+            return (imageData, decoded.content_type)
+        } catch {
+            return nil
+        }
+    }
 }

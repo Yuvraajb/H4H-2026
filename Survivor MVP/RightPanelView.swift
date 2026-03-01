@@ -6,6 +6,12 @@
 //
 
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
+#if os(iOS) || os(visionOS)
+import UIKit
+#endif
 
 struct RightPanelView: View {
     @Environment(CrisisCopilotModel.self) private var model
@@ -15,6 +21,7 @@ struct RightPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             cameraCard
+            stepsCard
             suggestedActionsCard
             Spacer(minLength: 0)
         }
@@ -85,6 +92,31 @@ struct RightPanelView: View {
         }
     }
 
+    private var stepsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Steps")
+                .font(.headline)
+            if model.instructionSteps.isEmpty {
+                Text("Describe what's happening — steps with images will appear here.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        ForEach(model.instructionSteps) { step in
+                            StepRowView(
+                                stepNumber: step.stepNumber,
+                                title: step.title,
+                                imageData: model.stepImageData[step.id]
+                            )
+                        }
+                    }
+                }
+                .frame(maxHeight: 280)
+            }
+        }
+    }
+
     private var suggestedActionsCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Suggested actions")
@@ -108,6 +140,74 @@ struct RightPanelView: View {
         }
     }
 }
+
+// MARK: - Step row (WikiHow-style: number + title + image)
+private struct StepRowView: View {
+    let stepNumber: Int
+    let title: String
+    let imageData: Data?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("Step \(stepNumber)")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+                Text(title)
+                    .font(.subheadline)
+            }
+            if let data = imageData {
+                stepImage(from: data)
+            } else if imageData == nil {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.black.opacity(0.15))
+                    .frame(height: 80)
+                    .overlay {
+                        ProgressView()
+                    }
+            }
+        }
+        .padding(12)
+        .background(Color.black.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func stepImage(from data: Data) -> some View {
+        #if os(macOS)
+        stepImageMac(data: data)
+        #else
+        stepImageIOS(data: data)
+        #endif
+    }
+}
+
+#if os(macOS)
+private func stepImageMac(data: Data) -> some View {
+    Group {
+        if let nsImage = NSImage(data: data) {
+            Image(nsImage: nsImage)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxHeight: 140)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+    }
+}
+#else
+import UIKit
+private func stepImageIOS(data: Data) -> some View {
+    Group {
+        if let uiImage = UIImage(data: data) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxHeight: 140)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+    }
+}
+#endif
 
 #Preview {
     RightPanelView(

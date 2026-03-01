@@ -3,9 +3,11 @@ Crisis Copilot FastAPI backend.
 - POST /api/chat — conversation with LLM, session stored in memory
 - GET/POST /api/tts — ElevenLabs TTS proxy
 - POST /api/report/{session_id}/generate — PDF report
+- POST /api/step-image — get instructional image from web (image_query)
 """
 from __future__ import annotations
 
+import base64
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -62,6 +64,17 @@ class ChatResponse(BaseModel):
 
 class TTSRequest(BaseModel):
     text: str
+
+
+class StepImageRequest(BaseModel):
+    image_query: str
+    display_text: Optional[str] = None
+    context: Optional[str] = None
+
+
+class StepImageResponse(BaseModel):
+    image_base64: str
+    content_type: str
 
 
 # --- Chat endpoint ---
@@ -175,6 +188,28 @@ async def generate_report(session_id: str):
         content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="crisis-copilot-report-{session_id[:8]}.pdf"'},
+    )
+
+
+# --- Step image (from web) ---
+
+@app.post("/api/step-image", response_model=StepImageResponse)
+async def step_image(req: StepImageRequest):
+    """Search the web for an image matching image_query, fetch it, return as base64."""
+    from services.step_image_service import get_step_image
+    query = (req.image_query or "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="image_query required")
+    result = await get_step_image(query)
+    if not result:
+        raise HTTPException(
+            status_code=502,
+            detail="Could not get image. Set GOOGLE_CSE_ID and GOOGLE_CSE_API_KEY (or GOOGLE_API_KEY) in backend/.env for web image search.",
+        )
+    image_bytes, content_type = result
+    return StepImageResponse(
+        image_base64=base64.b64encode(image_bytes).decode("ascii"),
+        content_type=content_type,
     )
 
 

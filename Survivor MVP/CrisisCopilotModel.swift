@@ -46,6 +46,20 @@ struct ChatMessage: Identifiable {
     }
 }
 
+/// A single step for the right-panel WikiHow-style instructions (title + optional image from web).
+struct InstructionStep: Identifiable {
+    let id: UUID
+    let stepNumber: Int
+    let title: String
+    let imageQuery: String?
+    init(id: UUID? = nil, stepNumber: Int, title: String, imageQuery: String?) {
+        self.id = id ?? UUID()
+        self.stepNumber = stepNumber
+        self.title = title
+        self.imageQuery = imageQuery
+    }
+}
+
 @MainActor
 @Observable
 class CrisisCopilotModel {
@@ -55,6 +69,10 @@ class CrisisCopilotModel {
     var messages: [ChatMessage] = []
     var draftText: String = ""
     var suggestedActions: [String] = []
+    /// Right-panel WikiHow-style steps (step number, title, optional image). Loaded images stored in stepImageData.
+    var instructionSteps: [InstructionStep] = []
+    /// Loaded image data by InstructionStep.id (set when step image is fetched from backend).
+    var stepImageData: [UUID: Data] = [:]
 
     // Voice + vision settings
     var audioOutEnabled: Bool
@@ -100,6 +118,8 @@ class CrisisCopilotModel {
     func startEmergency() {
         state = .active
         messages = []
+        instructionSteps = []
+        stepImageData = [:]
         reasoner.resetSession()
         suggestedActions = Self.suggestedActions(for: scenario)
         messages.append(ChatMessage(role: .assistant, text: greeting, timestamp: Date()))
@@ -122,6 +142,8 @@ class CrisisCopilotModel {
         messages = []
         draftText = ""
         suggestedActions = []
+        instructionSteps = []
+        stepImageData = [:]
         reasoner.resetSession()
     }
 
@@ -150,12 +172,23 @@ class CrisisCopilotModel {
                 ReasonerMessage(role: msg.role == .user ? "user" : "assistant", text: msg.text)
             }
             do {
-                let responseText = try await reasoner.respond(systemPrompt: "", conversation: conversation + [ReasonerMessage(role: "user", text: t)], imageBase64JPEG: imageBase64)
+                let (responseText, metadata) = try await reasoner.respond(systemPrompt: "", conversation: conversation + [ReasonerMessage(role: "user", text: t)], imageBase64JPEG: imageBase64)
                 if let idx = messages.firstIndex(where: { $0.id == thinkingId }) {
                     messages[idx].text = responseText
                 }
                 if audioOutEnabled {
                     try? await tts.speak(responseText)
+                }
+                if let meta = metadata, let imageQuery = meta.image_query, !imageQuery.isEmpty {
+                    let stepNum = (meta.step ?? 0) > 0 ? (meta.step ?? 0) : instructionSteps.count + 1
+                    let title = meta.display_text ?? "Step \(stepNum)"
+                    let step = InstructionStep(stepNumber: stepNum, title: title, imageQuery: imageQuery)
+                    instructionSteps.append(step)
+                    Task { @MainActor in
+                        if let result = await backendService.requestStepImage(query: imageQuery, displayText: meta.display_text, context: nil) {
+                            stepImageData[step.id] = result.imageData
+                        }
+                    }
                 }
             } catch {
                 let fallback = stubResponse(for: scenario)

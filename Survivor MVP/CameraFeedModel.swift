@@ -181,8 +181,7 @@ final class CameraFeedModel {
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, options: [:])
         do {
             try handler.perform([request])
-            let results = (request.results as? [VNHumanObservation]) ?? []
-            personDetected = !results.isEmpty
+            personDetected = (request.results?.isEmpty == false)
         } catch {
             personDetected = false
         }

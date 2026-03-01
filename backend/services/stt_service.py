@@ -16,7 +16,7 @@ async def transcribe_audio(audio_bytes: bytes, content_type: str = "audio/wav") 
         resp = await client.post(
             "https://api.elevenlabs.io/v1/speech-to-text",
             headers={"xi-api-key": api_key},
-            files={"audio": ("audio.wav", audio_bytes, content_type)},
+            files={"file": ("audio.wav", audio_bytes, content_type)},
             data={"model_id": "scribe_v1"},
         )
         resp.raise_for_status()

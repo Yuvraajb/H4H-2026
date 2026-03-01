@@ -16,6 +16,8 @@ struct Survivor_MVPApp: App {
             ContentView()
                 .environment(appModel)
                 .environment(crisisCopilotModel)
+                .onAppear { BackendLauncher.shared.startIfNeeded() }
+                .onDisappear { BackendLauncher.shared.stop() }
         }
         .windowResizability(.contentMinSize)
     }

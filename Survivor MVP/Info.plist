@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Personal Doctor uses the camera so the AI can see you during consultations.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Personal Doctor uses the microphone to listen to your voice so you can speak to the AI hands-free.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Personal Doctor uses speech recognition to transcribe your voice into text for the AI assistant.</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+</dict>
+</plist>

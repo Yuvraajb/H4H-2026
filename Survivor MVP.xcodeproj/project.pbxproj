@@ -1,0 +1,629 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		4AA7D2BD2F4EAFB900B4CEBC /* RealityKitContent in Frameworks */ = {isa = PBXBuildFile; productRef = 4AA7D2BC2F4EAFB900B4CEBC /* RealityKitContent */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		4AA7D2D42F4EAFBA00B4CEBC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4AA7D2AF2F4EAFB900B4CEBC /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4AA7D2B62F4EAFB900B4CEBC;
+			remoteInfo = "Survivor MVP";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		4AA7D2B72F4EAFB900B4CEBC /* Survivor MVP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Survivor MVP.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		4AA7D2BB2F4EAFB900B4CEBC /* RealityKitContent */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = RealityKitContent; sourceTree = "<group>"; };
+		4AA7D2D32F4EAFBA00B4CEBC /* Survivor MVPTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Survivor MVPTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		4AA7D2E22F4EAFBA00B4CEBC /* Survivor MVP Mac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Survivor MVP Mac.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		4AA7D2D92F4EAFBA00B4CEBC /* Exceptions for "Survivor MVP" folder in "Survivor MVP" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 4AA7D2B62F4EAFB900B4CEBC /* Survivor MVP */;
+		};
+		4AA7D2EA2F4EAFBA00B4CEBC /* Exceptions for "Survivor MVP" folder in "Survivor MVP Mac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				"Survivor MVP Mac.entitlements",
+			);
+			target = 4AA7D2E32F4EAFBA00B4CEBC /* Survivor MVP Mac */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		4AA7D2B92F4EAFB900B4CEBC /* Survivor MVP */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				4AA7D2D92F4EAFBA00B4CEBC /* Exceptions for "Survivor MVP" folder in "Survivor MVP" target */,
+				4AA7D2EA2F4EAFBA00B4CEBC /* Exceptions for "Survivor MVP" folder in "Survivor MVP Mac" target */,
+			);
+			path = "Survivor MVP";
+			sourceTree = "<group>";
+		};
+		4AA7D2D62F4EAFBA00B4CEBC /* Survivor MVPTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Survivor MVPTests";
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		4AA7D2B42F4EAFB900B4CEBC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4AA7D2BD2F4EAFB900B4CEBC /* RealityKitContent in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4AA7D2D02F4EAFBA00B4CEBC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4AA7D2E52F4EAFBA00B4CEBC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		4AA7D2AE2F4EAFB900B4CEBC = {
+			isa = PBXGroup;
+			children = (
+				4AA7D2B92F4EAFB900B4CEBC /* Survivor MVP */,
+				4AA7D2BA2F4EAFB900B4CEBC /* Packages */,
+				4AA7D2D62F4EAFBA00B4CEBC /* Survivor MVPTests */,
+				4AA7D2B82F4EAFB900B4CEBC /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		4AA7D2B82F4EAFB900B4CEBC /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				4AA7D2B72F4EAFB900B4CEBC /* Survivor MVP.app */,
+				4AA7D2E22F4EAFBA00B4CEBC /* Survivor MVP Mac.app */,
+				4AA7D2D32F4EAFBA00B4CEBC /* Survivor MVPTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		4AA7D2BA2F4EAFB900B4CEBC /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				4AA7D2BB2F4EAFB900B4CEBC /* RealityKitContent */,
+			);
+			path = Packages;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4AA7D2B62F4EAFB900B4CEBC /* Survivor MVP */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4AA7D2DA2F4EAFBA00B4CEBC /* Build configuration list for PBXNativeTarget "Survivor MVP" */;
+			buildPhases = (
+				4AA7D2B32F4EAFB900B4CEBC /* Sources */,
+				4AA7D2B42F4EAFB900B4CEBC /* Frameworks */,
+				4AA7D2B52F4EAFB900B4CEBC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				4AA7D2B92F4EAFB900B4CEBC /* Survivor MVP */,
+			);
+			name = "Survivor MVP";
+			packageProductDependencies = (
+				4AA7D2BC2F4EAFB900B4CEBC /* RealityKitContent */,
+			);
+			productName = "Survivor MVP";
+			productReference = 4AA7D2B72F4EAFB900B4CEBC /* Survivor MVP.app */;
+			productType = "com.apple.product-type.application";
+		};
+		4AA7D2D22F4EAFBA00B4CEBC /* Survivor MVPTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4AA7D2DF2F4EAFBA00B4CEBC /* Build configuration list for PBXNativeTarget "Survivor MVPTests" */;
+			buildPhases = (
+				4AA7D2CF2F4EAFBA00B4CEBC /* Sources */,
+				4AA7D2D02F4EAFBA00B4CEBC /* Frameworks */,
+				4AA7D2D12F4EAFBA00B4CEBC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4AA7D2D52F4EAFBA00B4CEBC /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				4AA7D2D62F4EAFBA00B4CEBC /* Survivor MVPTests */,
+			);
+			name = "Survivor MVPTests";
+			packageProductDependencies = (
+			);
+			productName = "Survivor MVPTests";
+			productReference = 4AA7D2D32F4EAFBA00B4CEBC /* Survivor MVPTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		4AA7D2E32F4EAFBA00B4CEBC /* Survivor MVP Mac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4AA7D2E72F4EAFBA00B4CEBC /* Build configuration list for PBXNativeTarget "Survivor MVP Mac" */;
+			buildPhases = (
+				4AA7D2E42F4EAFBA00B4CEBC /* Sources */,
+				4AA7D2E52F4EAFBA00B4CEBC /* Frameworks */,
+				4AA7D2E62F4EAFBA00B4CEBC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				4AA7D2B92F4EAFB900B4CEBC /* Survivor MVP */,
+			);
+			name = "Survivor MVP Mac";
+			productName = "Survivor MVP Mac";
+			productReference = 4AA7D2E22F4EAFBA00B4CEBC /* Survivor MVP Mac.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		4AA7D2AF2F4EAFB900B4CEBC /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2620;
+				LastUpgradeCheck = 2620;
+				TargetAttributes = {
+					4AA7D2B62F4EAFB900B4CEBC = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					4AA7D2D22F4EAFBA00B4CEBC = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 4AA7D2B62F4EAFB900B4CEBC;
+					};
+					4AA7D2E32F4EAFBA00B4CEBC = {
+						CreatedOnToolsVersion = 26.2;
+					};
+				};
+			};
+			buildConfigurationList = 4AA7D2B22F4EAFB900B4CEBC /* Build configuration list for PBXProject "Survivor MVP" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 4AA7D2AE2F4EAFB900B4CEBC;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				4AA7D2BE2F4EAFB900B4CEBC /* RealityKitContent */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 4AA7D2B82F4EAFB900B4CEBC /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				4AA7D2B62F4EAFB900B4CEBC /* Survivor MVP */,
+				4AA7D2E32F4EAFBA00B4CEBC /* Survivor MVP Mac */,
+				4AA7D2D22F4EAFBA00B4CEBC /* Survivor MVPTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		4AA7D2B52F4EAFB900B4CEBC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4AA7D2D12F4EAFBA00B4CEBC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4AA7D2E62F4EAFBA00B4CEBC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		4AA7D2B32F4EAFB900B4CEBC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4AA7D2CF2F4EAFBA00B4CEBC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4AA7D2E42F4EAFBA00B4CEBC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		4AA7D2D52F4EAFBA00B4CEBC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4AA7D2B62F4EAFB900B4CEBC /* Survivor MVP */;
+			targetProxy = 4AA7D2D42F4EAFBA00B4CEBC /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		4AA7D2DB2F4EAFBA00B4CEBC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "$(TARGET_NAME)/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "hack4h.Survivor-MVP";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 7;
+			};
+			name = Debug;
+		};
+		4AA7D2DC2F4EAFBA00B4CEBC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "$(TARGET_NAME)/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "hack4h.Survivor-MVP";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 7;
+			};
+			name = Release;
+		};
+		4AA7D2DD2F4EAFBA00B4CEBC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = xros;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				XROS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Debug;
+		};
+		4AA7D2DE2F4EAFBA00B4CEBC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = xros;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+				XROS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Release;
+		};
+		4AA7D2E02F4EAFBA00B4CEBC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "hack4h.Survivor-MVPTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 7;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Survivor MVP.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Survivor MVP";
+				XROS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Debug;
+		};
+		4AA7D2E12F4EAFBA00B4CEBC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "hack4h.Survivor-MVPTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 7;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Survivor MVP.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Survivor MVP";
+				XROS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Release;
+		};
+		4AA7D2E82F4EAFBA00B4CEBC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Survivor MVP/Survivor MVP Mac.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Survivor MVP/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "hack4h.Survivor-MVP-Mac";
+				PRODUCT_NAME = "Survivor MVP Mac";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		4AA7D2E92F4EAFBA00B4CEBC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Survivor MVP/Survivor MVP Mac.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Survivor MVP/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "hack4h.Survivor-MVP-Mac";
+				PRODUCT_NAME = "Survivor MVP Mac";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4AA7D2B22F4EAFB900B4CEBC /* Build configuration list for PBXProject "Survivor MVP" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4AA7D2DD2F4EAFBA00B4CEBC /* Debug */,
+				4AA7D2DE2F4EAFBA00B4CEBC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4AA7D2DA2F4EAFBA00B4CEBC /* Build configuration list for PBXNativeTarget "Survivor MVP" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4AA7D2DB2F4EAFBA00B4CEBC /* Debug */,
+				4AA7D2DC2F4EAFBA00B4CEBC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4AA7D2DF2F4EAFBA00B4CEBC /* Build configuration list for PBXNativeTarget "Survivor MVPTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4AA7D2E02F4EAFBA00B4CEBC /* Debug */,
+				4AA7D2E12F4EAFBA00B4CEBC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4AA7D2E72F4EAFBA00B4CEBC /* Build configuration list for PBXNativeTarget "Survivor MVP Mac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4AA7D2E82F4EAFBA00B4CEBC /* Debug */,
+				4AA7D2E92F4EAFBA00B4CEBC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		4AA7D2BE2F4EAFB900B4CEBC /* RealityKitContent */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/RealityKitContent;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		4AA7D2BC2F4EAFB900B4CEBC /* RealityKitContent */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4AA7D2BE2F4EAFB900B4CEBC /* RealityKitContent */;
+			productName = RealityKitContent;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 4AA7D2AF2F4EAFB900B4CEBC /* Project object */;
+}

@@ -7,12 +7,16 @@
 //
 
 import SwiftUI
+import CoreImage
+import CoreImage.CIFilterBuiltins
 
 struct ContentView: View {
     @Environment(CrisisCopilotModel.self) private var model
     @State private var cameraModel = CameraFeedModel()
     @State private var voiceOrbModel = VoiceOrbModel()
     @State private var poseDetector = BodyPoseDetector()
+    @State private var handPoseDetector = HandPoseDetector()
+    @State private var actionVerifier = ActionVerifier()
     @State private var cameraPreviewEnabled = true
     @State private var showPoseOverlay = true
     @State private var visualCheckInTimer: Timer?
@@ -37,6 +41,7 @@ struct ContentView: View {
         .onAppear {
             cameraModel.start()
             cameraModel.setPoseDetector(poseDetector)
+            cameraModel.setHandPoseDetector(handPoseDetector)
             voiceOrbModel.requestMicrophonePermissionIfNeeded()
             voiceOrbModel.copilotModel = model
             model.cameraModel = cameraModel
@@ -49,12 +54,28 @@ struct ContentView: View {
             visualCheckInTimer = nil
             cameraModel.stop()
         }
+        .onChange(of: model.messages.count) { _, _ in
+            // Detect verifiable actions from the latest AI message
+            if let lastAssistant = model.messages.last(where: { $0.role == .assistant }) {
+                let stepText = lastAssistant.steps.map(\.instruction).joined(separator: " ")
+                actionVerifier.detectAction(from: lastAssistant.text + " " + stepText)
+            }
+        }
+        .onChange(of: handPoseDetector.detectedHands) { _, hands in
+            actionVerifier.update(hands: hands, bodyLandmarks: poseDetector.detectedLandmarks)
+        }
+        .onChange(of: actionVerifier.state) { _, newState in
+            // When action verification completes, inject result into model
+            if newState == .complete, let result = actionVerifier.actionResultString {
+                model.actionResult = result
+            }
+        }
     }
 
     /// Start a repeating timer that sends a camera frame to the AI every 5 seconds
     /// when nobody is talking (orb is idle) and a session is active.
     private func startVisualCheckInTimer() {
-        visualCheckInTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
+        visualCheckInTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { _ in
             Task { @MainActor in
                 // Only send when idle — skip if user is speaking, AI is thinking, or AI is speaking
                 guard voiceOrbModel.orbState == .idle,
@@ -116,8 +137,31 @@ struct ContentView: View {
 
                     // Body pose landmark overlay (filtered by current AI instruction)
                     if showPoseOverlay {
-                        BodyPoseOverlayView(landmarks: relevantLandmarks)
-                            .allowsHitTesting(false)
+                        BodyPoseOverlayView(
+                            landmarks: relevantLandmarks,
+                            verifiedLandmarkName: actionVerifier.isFingerOnTarget ? actionVerifier.targetLandmarkName : nil
+                        )
+                        .allowsHitTesting(false)
+                    }
+
+                    // Action verification overlay (guide rings, timers, confirmations)
+                    GeometryReader { geo in
+                        ActionOverlayView(
+                            verifier: actionVerifier,
+                            bodyLandmarks: relevantLandmarks,
+                            viewSize: geo.size,
+                            onBeatCount: { count in
+                                actionVerifier.submitBeatCount(count)
+                                if let result = actionVerifier.actionResultString {
+                                    model.actionResult = result
+                                }
+                                // Auto-dismiss after a delay
+                                Task { @MainActor in
+                                    try? await Task.sleep(for: .seconds(2))
+                                    actionVerifier.dismiss()
+                                }
+                            }
+                        )
                     }
                 }
             } else {
@@ -388,39 +432,7 @@ struct VoicePanel: View {
 
             // Report footer
             Divider()
-            HStack(spacing: 10) {
-                if model.isGeneratingReport {
-                    ProgressView().scaleEffect(0.75)
-                    Text("Generating report…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                } else if let url = pdfURL {
-                    Image(systemName: "doc.text.fill")
-                        .foregroundStyle(.green)
-                        .font(.system(size: 13))
-                    Text("Report ready")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    ShareLink(item: url, preview: SharePreview("Incident Report")) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.system(size: 14))
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    Button {
-                        model.generateReport()
-                    } label: {
-                        Label("Generate Report", systemImage: "doc.text.fill")
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .disabled(model.state == .idle)
-                    Spacer()
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            ReportFooterPanel(pdfURL: $pdfURL)
         }
         .background(.background)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -977,6 +989,132 @@ private struct StepCard: View {
         }
         .padding(12)
         .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+// MARK: - Report Footer Panel
+
+private struct ReportFooterPanel: View {
+    @Environment(CrisisCopilotModel.self) private var model
+    @Binding var pdfURL: URL?
+    @State private var showQR = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if model.isGeneratingReport {
+                HStack(spacing: 10) {
+                    ProgressView().scaleEffect(0.75)
+                    Text("Generating paramedic report…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+            } else if let url = pdfURL {
+                VStack(spacing: 8) {
+                    // Ready bar
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .foregroundStyle(.green)
+                            .font(.system(size: 14))
+                        Text("Incident report ready")
+                            .font(.system(size: 12, weight: .semibold))
+                        Spacer()
+                        ShareLink(item: url, preview: SharePreview("Incident Report")) {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 13))
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            withAnimation(.spring(duration: 0.3)) { showQR.toggle() }
+                        } label: {
+                            Image(systemName: "qrcode")
+                                .font(.system(size: 13))
+                                .foregroundStyle(showQR ? Color.accentColor : Color.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Show QR code for paramedic download")
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+
+                    // QR code panel
+                    if showQR, let downloadURL = model.reportDownloadURL {
+                        VStack(spacing: 6) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "iphone.and.arrow.forward")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                                Text("Scan to download report on phone")
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                            }
+                            QRCodeView(url: downloadURL)
+                                .frame(width: 120, height: 120)
+                                .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
+                                .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
+                            Text(downloadURL)
+                                .font(.system(size: 7, design: .monospaced))
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        .padding(.bottom, 8)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                .padding(.bottom, 6)
+            } else {
+                HStack(spacing: 10) {
+                    Button {
+                        model.generateReport()
+                    } label: {
+                        Label("Generate Paramedic Report", systemImage: "cross.case.fill")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .disabled(model.state == .idle)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+            }
+        }
+    }
+}
+
+// MARK: - QR Code View (CoreImage-based)
+
+private struct QRCodeView: View {
+    let url: String
+
+    var body: some View {
+        if let image = generateQRImage(from: url) {
+            Image(nsImage: image)
+                .interpolation(.none)
+                .resizable()
+                .scaledToFit()
+        } else {
+            Image(systemName: "qrcode")
+                .font(.system(size: 40))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func generateQRImage(from string: String) -> NSImage? {
+        guard let data = string.data(using: .utf8),
+              let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(data, forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let ciImage = filter.outputImage else { return nil }
+
+        let scale = CGAffineTransform(scaleX: 10, y: 10)
+        let scaled = ciImage.transformed(by: scale)
+
+        let rep = NSCIImageRep(ciImage: scaled)
+        let nsImage = NSImage(size: rep.size)
+        nsImage.addRepresentation(rep)
+        return nsImage
     }
 }
 

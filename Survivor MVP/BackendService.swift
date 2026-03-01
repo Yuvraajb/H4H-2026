@@ -60,7 +60,7 @@ struct ChatResult {
 
 @MainActor
 final class BackendService {
-    private let baseURL: String
+    private let explicitBaseURL: String?
     private let session: URLSession
     private let decoder: JSONDecoder
 
@@ -68,9 +68,14 @@ final class BackendService {
     private static let fallbackBaseURLValue = "http://localhost:8000"
     static var deviceBaseURLOverride: String?
 
+    /// Resolved at call time so that `deviceBaseURLOverride` set after init is picked up.
+    private var baseURL: String {
+        let url = explicitBaseURL ?? Self.deviceBaseURLOverride ?? Self.defaultBaseURLValue
+        return url.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
     init(baseURL: String? = nil) {
-        let url = baseURL ?? Self.deviceBaseURLOverride ?? Self.defaultBaseURLValue
-        self.baseURL = url.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        self.explicitBaseURL = baseURL
         self.session = URLSession.shared
         self.decoder = JSONDecoder()
     }
@@ -102,7 +107,7 @@ final class BackendService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 30
+        request.timeoutInterval = 60
 
         var body: [String: Any] = ["message": text]
         if let sid = sessionId { body["session_id"] = sid }
@@ -173,7 +178,7 @@ final class BackendService {
               let url = URL(string: "\(baseURL)/api/tts?text=\(encoded)") else { return nil }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        request.timeoutInterval = 30
+        request.timeoutInterval = 60
         do {
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return nil }
@@ -208,7 +213,12 @@ final class BackendService {
 
     // MARK: - Report
 
-    func generateReport(sessionId: String) async -> Data? {
+    struct ReportResult {
+        let pdfData: Data
+        let downloadURL: String?
+    }
+
+    func generateReport(sessionId: String) async -> ReportResult? {
         guard let url = URL(string: "\(baseURL)/api/report/\(sessionId)/generate") else { return nil }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -216,7 +226,8 @@ final class BackendService {
         do {
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return nil }
-            return data
+            let downloadURL = http.value(forHTTPHeaderField: "X-Download-URL")
+            return ReportResult(pdfData: data, downloadURL: downloadURL)
         } catch { return nil }
     }
 }

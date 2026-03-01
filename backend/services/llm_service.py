@@ -122,6 +122,19 @@ def _parse_llm_json(content: str) -> dict[str, Any] | None:
         return None
 
 
+def _is_real_key(key: str | None) -> bool:
+    """Return True only if the key looks like a real API key (not a placeholder)."""
+    if not key:
+        return False
+    # Reject obvious placeholders like "sk-...", "sk-ant-...", empty, etc.
+    stripped = key.strip().rstrip(".")
+    if len(stripped) < 10:
+        return False
+    if stripped.endswith("..."):
+        return False
+    return True
+
+
 async def get_response(
     messages: list[dict[str, Any]],
     image_b64: str | None = None,
@@ -136,22 +149,25 @@ async def get_response(
             return await _get_response_groq(messages, image_b64)
         except Exception as e:
             print(f"[LLM] Groq failed ({e!s}), trying fallbacks...")
-            # Try Anthropic → Gemini → OpenAI as fallbacks
+            # Try Anthropic → Gemini → OpenAI as fallbacks (skip placeholder keys)
             for fallback_name, fallback_fn, fallback_key in [
                 ("Anthropic", _get_response_anthropic, "ANTHROPIC_API_KEY"),
                 ("Gemini", _get_response_gemini, "GEMINI_API_KEY"),
                 ("OpenAI", _get_response_openai, "OPENAI_API_KEY"),
             ]:
-                if os.getenv(fallback_key):
-                    try:
-                        print(f"[LLM] Trying {fallback_name}...")
-                        if fallback_name == "Gemini":
-                            return await fallback_fn(messages)
-                        return await fallback_fn(messages, image_b64)
-                    except Exception as e2:
-                        print(f"[LLM] {fallback_name} also failed: {e2!s}")
-                        continue
-            raise
+                key_val = os.getenv(fallback_key)
+                if not _is_real_key(key_val):
+                    continue
+                try:
+                    print(f"[LLM] Trying {fallback_name}...")
+                    if fallback_name == "Gemini":
+                        return await fallback_fn(messages)
+                    return await fallback_fn(messages, image_b64)
+                except Exception as e2:
+                    print(f"[LLM] {fallback_name} also failed: {e2!s}")
+                    continue
+            # All fallbacks exhausted — return a graceful error instead of raising
+            return _error_response("AI is temporarily rate-limited. Please wait a moment and try again.")
     return await _get_response_openai(messages, image_b64)
 
 
@@ -199,14 +215,17 @@ async def _get_response_groq(
                 "role": last["role"],
                 "content": last["content"] + " [Camera image was provided showing the scene]",
             }
-            resp = await client.chat.completions.create(
-                model=text_model,
-                messages=full_messages,
-                max_tokens=1200,
-                temperature=0.1,
-                response_format={"type": "json_object"},
-            )
-            return _parse_groq_response(resp)
+            try:
+                resp = await client.chat.completions.create(
+                    model=text_model,
+                    messages=full_messages,
+                    max_tokens=1200,
+                    temperature=0.1,
+                    response_format={"type": "json_object"},
+                )
+                return _parse_groq_response(resp)
+            except Exception as text_err:
+                raise RuntimeError(f"Groq text model also failed: {text_err!s}")
     else:
         full_messages.append({"role": last["role"], "content": last["content"]})
         try:

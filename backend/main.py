@@ -4,7 +4,8 @@ Survivor FastAPI backend.
 - GET  /api/images    — Wikipedia image lookup for a query
 - GET/POST /api/tts   — ElevenLabs TTS proxy
 - POST /api/stt       — ElevenLabs STT proxy
-- POST /api/report/{session_id}/generate — PDF report
+- POST /api/report/{session_id}/generate — PDF report (returns PDF + download_url)
+- GET  /api/report/{session_id}/download — download generated PDF (for QR code scanning)
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ from typing import Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, JSONResponse
 from pydantic import BaseModel
 
 from services.session_manager import session_manager
@@ -25,6 +26,9 @@ from services import llm_service
 
 _env_path = Path(__file__).resolve().parent / ".env"
 load_dotenv(_env_path)
+
+# In-memory cache of generated PDF bytes keyed by session_id
+_report_cache: dict[str, bytes] = {}
 
 
 @asynccontextmanager
@@ -47,6 +51,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Download-URL"],
 )
 
 
@@ -263,15 +268,48 @@ async def speech_to_text(request: Request):
 # ---------------------------------------------------------------------------
 
 @app.post("/api/report/{session_id}/generate")
-async def generate_report(session_id: str):
+async def generate_report(session_id: str, request: Request):
     session = session_manager.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     from services.report_generator import generate_pdf
+
+    # Build the public download URL so the PDF can embed a QR code pointing to it
+    base = str(request.base_url).rstrip("/")
+    download_url = f"{base}/api/report/{session_id}/download"
+
     try:
-        pdf_bytes = generate_pdf(session)
+        pdf_bytes = generate_pdf(session, download_url=download_url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Report error: {e!s}")
+
+    _report_cache[session_id] = pdf_bytes
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="report-{session_id[:8]}.pdf"',
+            "X-Download-URL": download_url,
+        },
+    )
+
+
+@app.get("/api/report/{session_id}/download")
+async def download_report(session_id: str):
+    """Serve a previously generated PDF — the URL that QR codes on the report point to."""
+    pdf_bytes = _report_cache.get(session_id)
+    if not pdf_bytes:
+        # Try generating on-the-fly if session still exists
+        session = session_manager.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Report not found")
+        from services.report_generator import generate_pdf
+        try:
+            pdf_bytes = generate_pdf(session)
+            _report_cache[session_id] = pdf_bytes
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Report error: {e!s}")
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

@@ -37,7 +37,27 @@ final class CameraFeedModel: NSObject {
 
     func setPoseDetector(_ detector: BodyPoseDetector?) {
         poseDetector = detector
-        cameraFeedStore.setDetector(detector)
+        if let detector {
+            cameraFeedStore.setDetectCallback { [weak detector] pb in
+                detector?.detectPose(in: pb)
+            }
+        } else {
+            cameraFeedStore.setDetectCallback(nil)
+        }
+    }
+
+    /// Hand pose detector — receives each camera frame for fingertip tracking.
+    private(set) weak var handPoseDetector: HandPoseDetector?
+
+    func setHandPoseDetector(_ detector: HandPoseDetector?) {
+        handPoseDetector = detector
+        if let detector {
+            cameraFeedStore.setHandDetectCallback { [weak detector] pb in
+                detector?.detectHands(in: pb)
+            }
+        } else {
+            cameraFeedStore.setHandDetectCallback(nil)
+        }
     }
 
     // MARK: - Session control
@@ -143,7 +163,9 @@ extension CameraFeedModel: AVCaptureVideoDataOutputSampleBufferDelegate {
         cameraFeedStore.setBuffer(pb)
 
         // Run body pose detection on the frame
-        cameraFeedStore.getDetector()?.detectPose(in: pb)
+        cameraFeedStore.runDetect(with: pb)
+        // Run hand pose detection on the frame
+        cameraFeedStore.runHandDetect(with: pb)
     }
 }
 
@@ -154,42 +176,61 @@ private final class CameraFeedStore: @unchecked Sendable {
     private let bufferLock = NSLock()
     private var latestBuffer: CVPixelBuffer?
 
-    private let detectorLock = NSLock()
-    private var poseDetector: BodyPoseDetector?
+    // Store @Sendable closures instead of detector objects directly.
+    // This avoids returning a potentially @MainActor-inferred type from nonisolated code.
+    private let detectLock = NSLock()
+    private var detectCallback: (@Sendable (CVPixelBuffer) -> Void)?
 
-    func setBuffer(_ pb: CVPixelBuffer?) {
+    private let handDetectLock = NSLock()
+    private var handDetectCallback: (@Sendable (CVPixelBuffer) -> Void)?
+
+    nonisolated func setBuffer(_ pb: CVPixelBuffer?) {
         bufferLock.lock()
         latestBuffer = pb
         bufferLock.unlock()
     }
 
-    func getBuffer() -> CVPixelBuffer? {
+    nonisolated func getBuffer() -> CVPixelBuffer? {
         bufferLock.lock()
         defer { bufferLock.unlock() }
         return latestBuffer
     }
 
-    func clearBuffer() {
+    nonisolated func clearBuffer() {
         bufferLock.lock()
         latestBuffer = nil
         bufferLock.unlock()
     }
 
-    func setDetector(_ detector: BodyPoseDetector?) {
-        detectorLock.lock()
-        poseDetector = detector
-        detectorLock.unlock()
+    nonisolated func setDetectCallback(_ callback: (@Sendable (CVPixelBuffer) -> Void)?) {
+        detectLock.lock()
+        detectCallback = callback
+        detectLock.unlock()
     }
 
-    func getDetector() -> BodyPoseDetector? {
-        detectorLock.lock()
-        defer { detectorLock.unlock() }
-        return poseDetector
+    nonisolated func runDetect(with pb: CVPixelBuffer) {
+        detectLock.lock()
+        let callback = detectCallback
+        detectLock.unlock()
+        callback?(pb)
+    }
+
+    nonisolated func setHandDetectCallback(_ callback: (@Sendable (CVPixelBuffer) -> Void)?) {
+        handDetectLock.lock()
+        handDetectCallback = callback
+        handDetectLock.unlock()
+    }
+
+    nonisolated func runHandDetect(with pb: CVPixelBuffer) {
+        handDetectLock.lock()
+        let callback = handDetectCallback
+        handDetectLock.unlock()
+        callback?(pb)
     }
 }
 
-/// Shared instance — safe to access from any thread/queue.
-nonisolated(unsafe) private let cameraFeedStore = CameraFeedStore()
+/// Shared instance — a `let` constant of a `Sendable` type is safe from any context.
+private let cameraFeedStore = CameraFeedStore()
 
 // MARK: - NSImage JPEG helper
 

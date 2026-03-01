@@ -4,6 +4,7 @@
 //
 //  Launches the Python backend automatically on app start.
 //  Checks if port 8000 is already live before spawning a new process.
+//  Only available on macOS — iOS/visionOS connect to a pre-running backend.
 //
 
 import Foundation
@@ -13,6 +14,7 @@ final class BackendLauncher {
 
     static let shared = BackendLauncher()
 
+#if os(macOS)
     private var process: Process?
 
     /// Call once at app launch. No-ops if backend is already up.
@@ -73,13 +75,6 @@ final class BackendLauncher {
         }
     }
 
-    private func isHealthy() async -> Bool {
-        guard let url = URL(string: "http://127.0.0.1:8000/health") else { return false }
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 2
-        return (try? await URLSession.shared.data(for: req)) != nil
-    }
-
     private func resolvedPython() async -> String {
         for candidate in ["/usr/bin/python3", "/usr/local/bin/python3", "/opt/homebrew/bin/python3"] {
             if FileManager.default.fileExists(atPath: candidate) { return candidate }
@@ -113,5 +108,20 @@ final class BackendLauncher {
             if parts.count == 2 { result[parts[0]] = parts[1] }
         }
         return result
+    }
+
+#else
+    // On iOS/visionOS the backend runs externally; these are no-ops.
+    func startIfNeeded() {}
+    func stop() {}
+#endif
+
+    // MARK: - Shared health check (all platforms)
+
+    private func isHealthy() async -> Bool {
+        guard let url = URL(string: "http://127.0.0.1:8000/health") else { return false }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 2
+        return (try? await URLSession.shared.data(for: req)) != nil
     }
 }

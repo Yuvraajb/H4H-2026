@@ -12,10 +12,12 @@ import SwiftUI
 struct BodyPoseOverlayView: View {
     let landmarks: [DetectedLandmark]
     let showLabels: Bool
+    let verifiedLandmarkName: String?
 
-    init(landmarks: [DetectedLandmark], showLabels: Bool = true) {
+    init(landmarks: [DetectedLandmark], showLabels: Bool = true, verifiedLandmarkName: String? = nil) {
         self.landmarks = landmarks
         self.showLabels = showLabels
+        self.verifiedLandmarkName = verifiedLandmarkName
     }
 
     var body: some View {
@@ -28,8 +30,9 @@ struct BodyPoseOverlayView: View {
             // Individual landmark dots + labels
             ForEach(landmarks) { landmark in
                 let pos = convertPoint(landmark.point, in: size)
+                let isVerified = verifiedLandmarkName == landmark.name
 
-                LandmarkDotView(landmark: landmark, showLabel: showLabels)
+                LandmarkDotView(landmark: landmark, showLabel: showLabels, isVerified: isVerified)
                     .position(pos)
             }
         }
@@ -50,9 +53,11 @@ struct BodyPoseOverlayView: View {
 private struct LandmarkDotView: View {
     let landmark: DetectedLandmark
     let showLabel: Bool
+    let isVerified: Bool
     @State private var pulseAnimation = false
 
     private var dotColor: Color {
+        if isVerified { return .green }
         switch landmark.category {
         case .pulsePoint: return .red
         case .joint:      return .cyan
@@ -91,6 +96,15 @@ private struct LandmarkDotView: View {
             Circle()
                 .stroke(dotColor.opacity(0.8), lineWidth: 1.5)
                 .frame(width: dotSize + 4, height: dotSize + 4)
+
+            // Verified checkmark
+            if isVerified {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(.green)
+                    .shadow(color: .green.opacity(0.6), radius: 6)
+                    .offset(x: 12, y: -12)
+            }
 
             // Label
             if showLabel {

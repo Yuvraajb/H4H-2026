@@ -63,6 +63,8 @@ class CrisisCopilotModel {
     var isProcessing: Bool = false
     var isGeneratingReport: Bool = false
     var reportData: Data? = nil
+    var reportDownloadURL: String? = nil
+    var actionResult: String? = nil           // Result from action verification (pulse BPM, CPR confirmed, etc.)
 
     /// Set from ContentView so each user message can attach a camera frame.
     weak var cameraModel: CameraFeedModel?
@@ -88,6 +90,7 @@ class CrisisCopilotModel {
         keyFindings = []
         extractedVitals = [:]
         sessionStartTime = Date()
+        actionResult = nil
     }
 
     func markResolved() {
@@ -101,7 +104,10 @@ class CrisisCopilotModel {
         isGeneratingReport = true
         Task { @MainActor in
             defer { isGeneratingReport = false }
-            reportData = await backendService.generateReport(sessionId: sid)
+            if let result = await backendService.generateReport(sessionId: sid) {
+                reportData = result.pdfData
+                reportDownloadURL = result.downloadURL
+            }
         }
     }
 
@@ -121,6 +127,8 @@ class CrisisCopilotModel {
         sessionStartTime = nil
         isGeneratingReport = false
         reportData = nil
+        reportDownloadURL = nil
+        actionResult = nil
     }
 
     func sendUserMessage(_ text: String) {
@@ -142,6 +150,10 @@ class CrisisCopilotModel {
         }
         if let poseSummary = poseDetector?.landmarkSummary {
             messageText += "\n[Vision detection: \(poseSummary)]"
+        }
+        if let result = actionResult {
+            messageText += "\n[Action verified: \(result)]"
+            actionResult = nil  // consumed
         }
 
         Task { @MainActor in

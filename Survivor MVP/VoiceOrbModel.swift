@@ -28,8 +28,8 @@ final class VoiceOrbModel {
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined else { return }
         AVCaptureDevice.requestAccess(for: .audio) { _ in }
         #else
-        guard AVAudioApplication.recordPermission == .undetermined else { return }
-        AVAudioApplication.requestRecordPermission { _ in }
+        guard AVAudioSession.sharedInstance().recordPermission == .undetermined else { return }
+        AVAudioSession.sharedInstance().requestRecordPermission { _ in }
         #endif
     }
 
@@ -53,7 +53,9 @@ final class VoiceOrbModel {
             AVCaptureDevice.requestAccess(for: .audio) { cont.resume(returning: $0) }
         }
         #else
-        let granted = await AVAudioApplication.requestRecordPermission()
+        let granted = await withCheckedContinuation { cont in
+            AVAudioSession.sharedInstance().requestRecordPermission { cont.resume(returning: $0) }
+        }
         #endif
         guard granted else {
             errorText = "Microphone access denied — allow it in Settings."
@@ -63,6 +65,20 @@ final class VoiceOrbModel {
     }
 
     private func startRecording() {
+        // On iOS, the audio session must be in record/playAndRecord mode before
+        // AVAudioEngine can capture mic input. Without this the tap writes 0 bytes.
+        #if !os(macOS)
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playAndRecord, mode: .default,
+                                    options: [.defaultToSpeaker, .allowBluetooth])
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            errorText = "Could not configure audio session: \(error.localizedDescription)"
+            return
+        }
+        #endif
+
         audioEngine = AVAudioEngine()
 
         let inputNode = audioEngine.inputNode
@@ -137,6 +153,9 @@ final class VoiceOrbModel {
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
         audioEngine.reset()
+        #if !os(macOS)
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        #endif
     }
 
     // MARK: - LLM

@@ -4,9 +4,11 @@
 <dict>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSAllowsLocalNetworking</key>
+		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Survivor connects to a backend server on your local network for AI-powered crisis assistance.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Survivor uses the camera so the AI can see you during consultations.</string>
 	<key>NSMicrophoneUsageDescription</key>

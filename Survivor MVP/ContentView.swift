@@ -3,7 +3,7 @@
 //  Survivor MVP
 //
 //  Personal Doctor — voice-native macOS layout.
-//  Left: live camera. Right: read-only transcript + full animated voice orb.
+//  Left: live camera. Right: floating panel with full clinical UI.
 //
 
 import SwiftUI
@@ -24,13 +24,13 @@ struct ContentView: View {
             VoicePanel(orbModel: voiceOrbModel)
                 .frame(width: 320)
                 .background(
-                    .ultraThinMaterial.opacity(0.82),
+                    .ultraThinMaterial.opacity(0.88),
                     in: RoundedRectangle(cornerRadius: 20, style: .continuous)
                 )
-                .shadow(color: .black.opacity(0.25), radius: 24, x: -4, y: 0)
-                .padding(16)
+                .shadow(color: .black.opacity(0.30), radius: 28, x: -6, y: 0)
+                .padding(14)
         }
-        .frame(minWidth: 700, minHeight: 500)
+        .frame(minWidth: 760, minHeight: 520)
         .onAppear {
             cameraModel.start()
             voiceOrbModel.copilotModel = model
@@ -101,22 +101,50 @@ struct VoicePanel: View {
     @State private var ringExpand = false
     @State private var outerExpand = false
     @State private var thinkingStart: Date? = nil
+    @State private var emergencyPulse = false
 
     var body: some View {
         VStack(spacing: 0) {
+            // Emergency 911 banner — only visible when call_emergency = true
+            if model.callEmergency {
+                EmergencyBanner(pulse: $emergencyPulse)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             // Header
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Personal Doctor")
-                        .font(.headline)
-                    Text("Tap the orb to speak")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text("Personal Doctor")
+                            .font(.headline)
+                        UrgencyBadge(urgency: model.currentUrgency)
+                    }
+                    PhaseProgressDots(phase: model.currentPhase)
                 }
                 Spacer()
+                SessionTimerView(startTime: model.sessionStartTime)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
+
+            // Diagnosis card — appears after assessment phase
+            if let diagnosis = model.currentDiagnosis {
+                DiagnosisCard(
+                    diagnosis: diagnosis,
+                    confidence: model.diagnosisConfidence,
+                    findings: model.keyFindings
+                )
+                .padding(.horizontal, 10)
+                .padding(.bottom, 6)
+            }
+
+            // Vitals strip — appears when any vitals captured
+            if !model.extractedVitals.isEmpty {
+                VitalsStrip(vitals: model.extractedVitals)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 6)
+            }
 
             Divider()
 
@@ -133,6 +161,10 @@ struct VoicePanel: View {
                             TranscriptBubble(message: msg)
                                 .id(msg.id)
                         }
+                        if model.isProcessing {
+                            ThinkingBubble()
+                                .id("thinking")
+                        }
                     }
                     .padding(12)
                 }
@@ -144,12 +176,19 @@ struct VoicePanel: View {
                         }
                     }
                 }
+                .onChange(of: model.isProcessing) { _, processing in
+                    if processing {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo("thinking", anchor: .bottom)
+                        }
+                    }
+                }
             }
 
             Divider()
 
             // Full animated orb
-            VStack(spacing: 18) {
+            VStack(spacing: 14) {
                 TimelineView(.animation(minimumInterval: 1.0 / 60, paused: orbModel.orbState != .thinking)) { tl in
                     let elapsed = thinkingStart.map { tl.date.timeIntervalSince($0) } ?? 0
                     ZStack {
@@ -209,7 +248,7 @@ struct VoicePanel: View {
                         .padding(.horizontal)
                 }
             }
-            .padding(.vertical, 28)
+            .padding(.vertical, 20)
             .frame(maxWidth: .infinity)
             .onChange(of: orbModel.orbState) { _, newState in
                 withAnimation(.none) {
@@ -224,8 +263,16 @@ struct VoicePanel: View {
                 }
             }
             .onAppear { triggerAnimations(for: .idle) }
+            .onChange(of: model.callEmergency) { _, emergency in
+                if emergency {
+                    withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+                        emergencyPulse = true
+                    }
+                }
+            }
         }
         .background(.background)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     // MARK: - Animations
@@ -258,7 +305,7 @@ struct VoicePanel: View {
             withAnimation(anim)  { pulseUp = true; ringExpand = true }
             withAnimation(delay) { outerExpand = true }
         case .thinking:
-            break // TimelineView handles rotation
+            break
         case .speaking:
             withAnimation(anim)  { pulseUp = true; ringExpand = true }
             withAnimation(delay) { outerExpand = true }
@@ -308,6 +355,324 @@ struct VoicePanel: View {
         case .listening: return Color(red: 1.0,  green: 0.30, blue: 0.42).opacity(0.15)
         case .thinking:  return Color(red: 0.98, green: 0.78, blue: 0.20).opacity(0.18)
         case .speaking:  return Color(red: 0.30, green: 1.0,  blue: 0.57).opacity(0.12)
+        }
+    }
+}
+
+// MARK: - Emergency Banner
+
+private struct EmergencyBanner: View {
+    @Binding var pulse: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "phone.fill")
+                .font(.system(size: 14, weight: .bold))
+            Text("CALL 911 NOW")
+                .font(.system(size: 13, weight: .black))
+                .tracking(1.5)
+            Spacer()
+            // Tappable on macOS — opens dialer on iOS/visionOS
+            Link("📞 911", destination: URL(string: "tel:911")!)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(.white.opacity(0.25), in: Capsule())
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(
+            pulse
+                ? Color.red
+                : Color(red: 0.8, green: 0, blue: 0),
+            in: Rectangle()
+        )
+        .animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: pulse)
+        .onAppear {
+            pulse = true
+        }
+    }
+}
+
+// MARK: - Urgency Badge
+
+private struct UrgencyBadge: View {
+    let urgency: String
+
+    private var label: String {
+        urgency.uppercased()
+    }
+
+    private var color: Color {
+        switch urgency {
+        case "low":      return Color(red: 0.18, green: 0.65, blue: 0.33)
+        case "medium":   return Color(red: 0.90, green: 0.62, blue: 0.0)
+        case "high":     return Color(red: 0.92, green: 0.38, blue: 0.0)
+        case "critical": return Color(red: 0.85, green: 0.06, blue: 0.06)
+        default:         return .secondary
+        }
+    }
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: 9, weight: .bold))
+            .tracking(0.8)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(color, in: Capsule())
+    }
+}
+
+// MARK: - Phase Progress Dots
+
+private struct PhaseProgressDots: View {
+    let phase: String
+
+    private var phaseIndex: Int {
+        switch phase {
+        case "questioning": return 0
+        case "assessment":  return 1
+        case "treatment":   return 2
+        default:            return 0
+        }
+    }
+
+    private let labels = ["Assess", "Diagnose", "Treat"]
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<3) { i in
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(i <= phaseIndex ? Color.accentColor : Color.primary.opacity(0.15))
+                        .frame(width: 6, height: 6)
+                    if i <= phaseIndex {
+                        Text(labels[i])
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(i == phaseIndex ? Color.accentColor : Color.primary.opacity(0.4))
+                    }
+                }
+                if i < 2 {
+                    Rectangle()
+                        .fill(i < phaseIndex ? Color.accentColor.opacity(0.4) : Color.primary.opacity(0.1))
+                        .frame(width: 12, height: 1)
+                }
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: phase)
+    }
+}
+
+// MARK: - Session Timer
+
+private struct SessionTimerView: View {
+    let startTime: Date?
+    @State private var elapsed: TimeInterval = 0
+    @State private var timer: Timer? = nil
+
+    var body: some View {
+        Group {
+            if startTime != nil {
+                Text(formattedTime)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+        }
+        .onAppear { startTimer() }
+        .onDisappear { timer?.invalidate() }
+        .onChange(of: startTime) { _, _ in startTimer() }
+    }
+
+    private var formattedTime: String {
+        let minutes = Int(elapsed) / 60
+        let seconds = Int(elapsed) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    private func startTimer() {
+        timer?.invalidate()
+        guard let start = startTime else { return }
+        elapsed = Date().timeIntervalSince(start)
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+            elapsed = Date().timeIntervalSince(start)
+        }
+    }
+}
+
+// MARK: - Diagnosis Card
+
+private struct DiagnosisCard: View {
+    let diagnosis: String
+    let confidence: Int
+    let findings: [String]
+
+    private var confidenceColor: Color {
+        if confidence >= 80 { return Color(red: 0.18, green: 0.65, blue: 0.33) }
+        if confidence >= 60 { return Color(red: 0.90, green: 0.62, blue: 0.0) }
+        return Color(red: 0.92, green: 0.38, blue: 0.0)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "stethoscope")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text(diagnosis)
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer()
+                if confidence > 0 {
+                    Text("\(confidence)%")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(confidenceColor)
+                }
+            }
+            if !findings.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(findings, id: \.self) { finding in
+                        HStack(spacing: 5) {
+                            Circle()
+                                .fill(Color.secondary.opacity(0.5))
+                                .frame(width: 4, height: 4)
+                            Text(finding)
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.accentColor.opacity(0.15), lineWidth: 1)
+        )
+        .transition(.move(edge: .top).combined(with: .opacity))
+        .animation(.spring(duration: 0.4), value: diagnosis)
+    }
+}
+
+// MARK: - Vitals Strip
+
+private struct VitalsStrip: View {
+    let vitals: [String: Double]
+
+    private var orderedVitals: [(key: String, value: Double, label: String, unit: String, icon: String)] {
+        let map: [(String, String, String, String)] = [
+            ("hr",   "HR",   "bpm",  "heart.fill"),
+            ("rr",   "RR",   "/min", "lungs.fill"),
+            ("spo2", "SpO₂", "%",    "waveform.path.ecg"),
+            ("sbp",  "BP",   "mmHg", "gauge"),
+            ("gcs",  "GCS",  "/15",  "brain.head.profile"),
+            ("temp", "Temp", "°C",   "thermometer.medium"),
+        ]
+        return map.compactMap { key, label, unit, icon in
+            guard let val = vitals[key] else { return nil }
+            return (key: key, value: val, label: label, unit: unit, icon: icon)
+        }
+    }
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(orderedVitals, id: \.key) { vital in
+                    VitalCard(
+                        icon: vital.icon,
+                        label: vital.label,
+                        value: formattedValue(vital.value, key: vital.key),
+                        unit: vital.unit,
+                        isAbnormal: isAbnormal(value: vital.value, key: vital.key)
+                    )
+                }
+            }
+            .padding(.vertical, 2)
+        }
+        .transition(.opacity)
+        .animation(.easeInOut(duration: 0.3), value: vitals.count)
+    }
+
+    private func formattedValue(_ val: Double, key: String) -> String {
+        if key == "gcs" || key == "hr" || key == "rr" || key == "sbp" {
+            return String(Int(val))
+        }
+        return String(format: "%.1f", val)
+    }
+
+    private func isAbnormal(value: Double, key: String) -> Bool {
+        switch key {
+        case "hr":   return value < 50 || value > 120
+        case "rr":   return value < 8 || value > 25
+        case "spo2": return value < 94
+        case "gcs":  return value < 13
+        case "sbp":  return value < 90 || value > 180
+        case "temp": return value < 35 || value > 38.5
+        default:     return false
+        }
+    }
+}
+
+private struct VitalCard: View {
+    let icon: String
+    let label: String
+    let value: String
+    let unit: String
+    let isAbnormal: Bool
+
+    var body: some View {
+        VStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(isAbnormal ? .red : .secondary)
+            Text(value)
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundStyle(isAbnormal ? .red : .primary)
+            Text("\(label) \(unit)")
+                .font(.system(size: 8))
+                .foregroundStyle(.secondary)
+        }
+        .frame(minWidth: 52)
+        .padding(.vertical, 7)
+        .padding(.horizontal, 8)
+        .background(
+            isAbnormal ? Color.red.opacity(0.08) : Color.primary.opacity(0.04),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(isAbnormal ? Color.red.opacity(0.3) : .clear, lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - Thinking bubble
+
+private struct ThinkingBubble: View {
+    @State private var phase = 0.0
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            HStack(spacing: 5) {
+                ForEach(0..<3) { i in
+                    Circle()
+                        .fill(Color.secondary.opacity(0.5))
+                        .frame(width: 6, height: 6)
+                        .offset(y: sin(phase + Double(i) * 1.2) * 3)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            Spacer(minLength: 32)
+        }
+        .onAppear {
+            withAnimation(.linear(duration: 1.0).repeatForever(autoreverses: false)) {
+                phase = .pi * 2
+            }
         }
     }
 }
@@ -392,7 +757,7 @@ private struct StepCard: View {
                     case .empty:
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .fill(Color.primary.opacity(0.05))
-                            .frame(width: 240, height: 120)
+                            .frame(width: 240, height: 100)
                             .overlay(ProgressView().scaleEffect(0.6))
                     @unknown default:
                         EmptyView()

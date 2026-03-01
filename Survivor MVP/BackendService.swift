@@ -15,7 +15,9 @@ struct ChatResponsePayload: Decodable {
 
     struct ResponsePayload: Decodable {
         let spoken_text: String
+        let phase: String?
         let steps: [StepPayload]?
+        let vitals: [String: Double]?
         let metadata: MetadataPayload?
     }
 
@@ -28,7 +30,9 @@ struct ChatResponsePayload: Decodable {
         let urgency: String?
         let diagnosis: String?
         let call_emergency: Bool?
-        // Legacy fields kept for backward compatibility
+        let confidence: Int?
+        let key_findings: [String]?
+        // Legacy fields
         let step: Int?
         let image_query: String?
         let category: String?
@@ -41,6 +45,15 @@ struct ChatResponsePayload: Decodable {
 struct StepResult {
     let instruction: String
     let imageURL: String?
+}
+
+struct ChatResult {
+    let responseText: String
+    let steps: [StepResult]
+    let metadata: ChatResponsePayload.MetadataPayload?
+    let phase: String
+    let vitals: [String: Double]
+    let sessionId: String
 }
 
 // MARK: - BackendService
@@ -69,7 +82,7 @@ final class BackendService {
         sessionId: String?,
         text: String,
         imageData: Data? = nil
-    ) async -> (responseText: String, steps: [StepResult], metadata: ChatResponsePayload.MetadataPayload?, sessionId: String)? {
+    ) async -> ChatResult? {
         let urls = [baseURL, Self.fallbackBaseURLValue.trimmingCharacters(in: CharacterSet(charactersIn: "/"))]
         for base in urls {
             if let result = await performChat(baseURL: base, sessionId: sessionId, text: text, imageData: imageData) {
@@ -84,7 +97,7 @@ final class BackendService {
         sessionId: String?,
         text: String,
         imageData: Data?
-    ) async -> (responseText: String, steps: [StepResult], metadata: ChatResponsePayload.MetadataPayload?, sessionId: String)? {
+    ) async -> ChatResult? {
         guard let url = URL(string: "\(baseURL)/api/chat") else { return nil }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -105,7 +118,14 @@ final class BackendService {
             let steps = (decoded.response.steps ?? []).map {
                 StepResult(instruction: $0.instruction, imageURL: $0.image_url)
             }
-            return (decoded.response.spoken_text, steps, decoded.response.metadata, decoded.session_id)
+            return ChatResult(
+                responseText: decoded.response.spoken_text,
+                steps: steps,
+                metadata: decoded.response.metadata,
+                phase: decoded.response.phase ?? "questioning",
+                vitals: decoded.response.vitals ?? [:],
+                sessionId: decoded.session_id
+            )
         } catch {
             return nil
         }

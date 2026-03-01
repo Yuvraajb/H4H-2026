@@ -118,8 +118,13 @@ async def chat(req: ChatRequest):
     phase = result.get("phase", "questioning")
     steps_raw: list[dict] = result.get("steps") or []
     metadata = result.get("metadata") or {}
+    vitals = result.get("vitals") or {}
 
     session_manager.append_message(session_id, "assistant", spoken)
+
+    # Store metadata on session for report generation
+    if metadata:
+        session_manager.append_metadata(session_id, metadata)
 
     # Fetch Wikipedia images for each step concurrently
     steps: list[dict] = []
@@ -137,6 +142,7 @@ async def chat(req: ChatRequest):
             "spoken_text": spoken,
             "phase": phase,
             "steps": steps,
+            "vitals": vitals,
             "metadata": metadata,
         },
         session_id=session_id,

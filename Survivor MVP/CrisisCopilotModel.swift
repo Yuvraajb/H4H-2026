@@ -51,11 +51,22 @@ class CrisisCopilotModel {
     var draftText: String = ""
     var suggestedActions: [String] = []
 
+    // Live clinical state (updated with each AI response)
+    var currentPhase: String = "questioning"       // "questioning" | "assessment" | "treatment"
+    var currentUrgency: String = "low"             // "low" | "medium" | "high" | "critical"
+    var callEmergency: Bool = false
+    var currentDiagnosis: String? = nil
+    var diagnosisConfidence: Int = 0
+    var keyFindings: [String] = []
+    var extractedVitals: [String: Double] = [:]    // hr, rr, spo2, gcs, sbp, temp
+    var sessionStartTime: Date? = nil
+    var isProcessing: Bool = false
+
     /// Set from ContentView so each user message can attach a camera frame.
     weak var cameraModel: CameraFeedModel?
 
-    private let greeting = "Hey! I'm your personal doctor. What's going on — tell me what's happening and I'll help you through it."
-    private let wrapUp = "Session marked resolved. If you need to report again, start a new emergency."
+    private let greeting = "Hey, I'm your personal doctor. What's going on — tell me exactly what happened."
+    private let wrapUp = "Session resolved. Stay calm — you've done great. Start a new session if anything changes."
 
     private var sessionId: String?
     private let backendService = BackendService()
@@ -65,6 +76,14 @@ class CrisisCopilotModel {
         messages = []
         sessionId = nil
         suggestedActions = []
+        currentPhase = "questioning"
+        currentUrgency = "low"
+        callEmergency = false
+        currentDiagnosis = nil
+        diagnosisConfidence = 0
+        keyFindings = []
+        extractedVitals = [:]
+        sessionStartTime = Date()
         messages.append(ChatMessage(role: .assistant, text: greeting))
 
         Task { @MainActor in
@@ -88,6 +107,14 @@ class CrisisCopilotModel {
         draftText = ""
         suggestedActions = []
         sessionId = nil
+        currentPhase = "questioning"
+        currentUrgency = "low"
+        callEmergency = false
+        currentDiagnosis = nil
+        diagnosisConfidence = 0
+        keyFindings = []
+        extractedVitals = [:]
+        sessionStartTime = nil
     }
 
     func sendUserMessage(_ text: String) {
@@ -96,14 +123,31 @@ class CrisisCopilotModel {
         if state == .idle { state = .active }
         messages.append(ChatMessage(role: .user, text: t))
         draftText = ""
+        isProcessing = true
 
         // Capture camera frame to attach as visual context
         let imageData = cameraModel?.captureFrame()
 
         Task { @MainActor in
+            defer { isProcessing = false }
             let result = await backendService.sendMessage(sessionId: sessionId, text: t, imageData: imageData)
             if let result {
                 sessionId = result.sessionId
+
+                // Update live clinical state
+                currentPhase = result.phase
+                if let meta = result.metadata {
+                    if let u = meta.urgency { currentUrgency = u }
+                    if let ce = meta.call_emergency { callEmergency = ce }
+                    if let diag = meta.diagnosis { currentDiagnosis = diag }
+                    if let conf = meta.confidence { diagnosisConfidence = conf }
+                    if let findings = meta.key_findings { keyFindings = findings }
+                }
+                // Merge vitals (keep previously captured values if not updated)
+                for (key, value) in result.vitals {
+                    extractedVitals[key] = value
+                }
+
                 let msg = ChatMessage(
                     role: .assistant,
                     text: result.responseText,

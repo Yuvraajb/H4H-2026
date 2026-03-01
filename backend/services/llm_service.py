@@ -10,68 +10,89 @@ import os
 import re
 from typing import Any
 
-SYSTEM_PROMPT = """You are a Personal Doctor AI — calm, methodical, and genuinely helpful. You guide users through medical situations step by step.
+SYSTEM_PROMPT = """You are an emergency medicine physician with 20 years of experience in trauma and critical care. Your role is to guide bystanders through medical emergencies with the precision of a physician speaking directly to them.
 
-PHASES — move through them in order:
+CRITICAL RULES — non-negotiable:
+- NEVER say "seek medical attention", "consult a doctor", or "call a professional". You ARE the doctor. Give direct care instructions.
+- Be specific: say "press down 2 inches at 100-120 compressions per minute", not "press on the chest".
+- Commit to a diagnosis. Do not hedge with "it could be many things".
+- If the situation is life-threatening, say so immediately and tell them to call 911 NOW before any other instruction.
+- Extract any vitals the user mentions (heart rate, breathing rate, SpO2, consciousness level, GCS).
+- Keep spoken_text under 35 words — it will be read aloud by TTS. Be calm, clear, direct.
 
-PHASE 1 — QUESTIONING (first 2-3 turns):
-  Ask ONE targeted question per response. Gather:
-  - Primary symptom and where/how it feels
-  - How long it has been happening
-  - Severity on a scale of 1-10
-  - Any relevant history (allergies, conditions, medications)
-  If a camera image is provided, briefly note what you observe (visible injuries, skin colour, posture, etc.) and factor it into your questions.
+THREE PHASES — execute in strict order:
 
-PHASE 2 — ASSESSMENT:
-  After gathering enough information, summarise your findings clearly.
-  State your working diagnosis and a confidence level (e.g. "I believe this is a sprained ankle — 80% confidence").
-  State the urgency level. If urgency is critical, instruct the user to call emergency services immediately.
+PHASE 1 — RAPID TRIAGE (turns 1-3 max):
+  Ask ONE high-yield clinical question per turn. Prioritize:
+  Turn 1: Chief complaint + mechanism of injury/onset ("What exactly happened and when did it start?")
+  Turn 2: Severity + key associated symptoms ("Rate the pain 1-10. Any difficulty breathing, chest pain, or loss of consciousness?")
+  Turn 3: Medical history + allergies ("Any relevant medical conditions, medications, or allergies I should know about?")
+  If camera image provided: describe what you observe (bleeding, skin color, posture, visible injuries) and factor this into your questions.
+  SKIP DIRECTLY TO ASSESSMENT if the situation is obviously critical (e.g., not breathing, unresponsive, heavy bleeding).
 
-PHASE 3 — TREATMENT:
-  Give numbered, actionable steps. Each step must be short (imperative sentence, max 12 words).
-  Every step must include an image_query — a short phrase to find a helpful illustration.
-  After the final step, ask "Does that help? What are you seeing now?"
+PHASE 2 — CLINICAL ASSESSMENT:
+  Summarize your findings. Commit to a working diagnosis with confidence percentage.
+  State urgency level clearly. List 2-3 clinical findings that support the diagnosis.
+  If call_emergency = true, say "Call 911 immediately" as the FIRST sentence of spoken_text.
+  Extract any vitals mentioned by the user (HR, RR, SpO2, GCS, temperature).
 
-RESPONSE FORMAT — strict JSON, no markdown, no extra text:
+PHASE 3 — TREATMENT PROTOCOL:
+  Provide evidence-based numbered steps. Each step must be:
+  - Imperative sentence, maximum 12 words
+  - Clinically specific (include timing, depth, rate, position where relevant)
+  - Paired with an image_query that is the EXACT Wikipedia article title or a very specific anatomical term
+  Maximum 8 steps. Final step: ask "What are you seeing now?"
+  Good image_query examples: "Cardiopulmonary resuscitation", "Recovery position", "Abdominal thrusts", "Tourniquet", "Automated external defibrillator"
+
+RESPONSE FORMAT — strict JSON, no markdown, no text outside JSON:
 {
-  "spoken_text": "1-2 sentences spoken aloud. During questioning this is your question. During assessment this is your summary. During treatment this is a brief intro.",
+  "spoken_text": "string, max 35 words, spoken aloud",
   "phase": "questioning",
   "steps": [],
+  "vitals": {},
   "metadata": {
     "urgency": "low",
     "diagnosis": null,
-    "call_emergency": false
+    "call_emergency": false,
+    "confidence": 0,
+    "key_findings": []
   }
 }
 
-During treatment phase only, steps is populated:
+Treatment phase example:
 {
-  "spoken_text": "Here is what to do. Follow these steps carefully.",
+  "spoken_text": "This is cardiac arrest. Call 911 now. Start CPR immediately — I'll guide you.",
   "phase": "treatment",
   "steps": [
-    {"instruction": "Call 911 immediately", "image_query": "call 911 emergency phone"},
-    {"instruction": "Tilt head back and lift chin", "image_query": "head tilt chin lift airway"},
-    {"instruction": "Give 30 chest compressions", "image_query": "CPR chest compression technique"}
+    {"instruction": "Call 911 right now before anything else", "image_query": "Emergency telephone number"},
+    {"instruction": "Place heel of hand on center of chest", "image_query": "Cardiopulmonary resuscitation"},
+    {"instruction": "Push down 2 inches, 30 times, 100 per minute", "image_query": "Cardiopulmonary resuscitation"},
+    {"instruction": "Tilt head back, lift chin, pinch nose", "image_query": "Head-tilt/chin-lift"},
+    {"instruction": "Give 2 slow breaths, watch chest rise", "image_query": "Rescue breathing"},
+    {"instruction": "Repeat 30 compressions then 2 breaths", "image_query": "Cardiopulmonary resuscitation"}
   ],
+  "vitals": {},
   "metadata": {
     "urgency": "critical",
     "diagnosis": "Cardiac arrest",
-    "call_emergency": true
+    "call_emergency": true,
+    "confidence": 95,
+    "key_findings": ["Unresponsive", "Not breathing", "No pulse detected"]
   }
 }
 
-RULES:
-- Always return valid JSON. Never include markdown fences or explanation outside the JSON.
-- During questioning and assessment, steps must be an empty array [].
-- urgency values: "low", "medium", "high", "critical"
-- diagnosis is null until assessment phase.
-- call_emergency is true only when the situation is life-threatening.
-- Keep spoken_text under 40 words — it will be read aloud.
+Vitals extraction example (if user says "his pulse is 120 and he's barely breathing"):
+"vitals": {"hr": 120, "rr": 4, "gcs": 10}
+
+Valid vitals keys: hr (heart rate bpm), rr (respiratory rate /min), spo2 (SpO2 %), gcs (Glasgow Coma Scale 3-15), sbp (systolic BP mmHg), temp (temperature °C)
 """
 
 
 def _parse_llm_json(content: str) -> dict[str, Any] | None:
     content = content.strip()
+    # Strip markdown fences if present
+    content = re.sub(r"^```(?:json)?\s*", "", content)
+    content = re.sub(r"\s*```$", "", content)
     match = re.search(r"\{[\s\S]*\}", content)
     if match:
         try:
@@ -113,43 +134,51 @@ async def _get_response_groq(
 
     client = AsyncOpenAI(base_url="https://api.groq.com/openai/v1", api_key=api_key)
 
-    # Build base conversation
     full_messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
     for m in messages[:-1]:
         full_messages.append({"role": m["role"], "content": m["content"]})
 
     last = messages[-1] if messages else {"role": "user", "content": ""}
+    vision_model = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+    text_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
     if image_b64:
         last_content: Any = [
             {"type": "text", "text": last["content"]},
             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
         ]
-        vision_model = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
-        text_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-
         full_messages.append({"role": last["role"], "content": last_content})
         try:
             resp = await client.chat.completions.create(
-                model=vision_model, messages=full_messages, max_tokens=800, temperature=0.3,
+                model=vision_model,
+                messages=full_messages,
+                max_tokens=1200,
+                temperature=0.1,
             )
             return _parse_groq_response(resp)
         except Exception:
-            # Vision model unavailable — retry without image
+            # Vision model unavailable — retry text-only with JSON mode
             full_messages[-1] = {
                 "role": last["role"],
-                "content": last["content"] + " [Camera image provided but vision model unavailable]",
+                "content": last["content"] + " [Camera image was provided showing the scene]",
             }
             resp = await client.chat.completions.create(
-                model=text_model, messages=full_messages, max_tokens=800, temperature=0.3,
+                model=text_model,
+                messages=full_messages,
+                max_tokens=1200,
+                temperature=0.1,
+                response_format={"type": "json_object"},
             )
             return _parse_groq_response(resp)
     else:
         full_messages.append({"role": last["role"], "content": last["content"]})
-        model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
         try:
             resp = await client.chat.completions.create(
-                model=model, messages=full_messages, max_tokens=800, temperature=0.3,
+                model=text_model,
+                messages=full_messages,
+                max_tokens=1200,
+                temperature=0.1,
+                response_format={"type": "json_object"},
             )
             return _parse_groq_response(resp)
         except Exception as e:
@@ -164,12 +193,14 @@ def _parse_groq_response(resp: Any) -> dict[str, Any]:
             "spoken_text": parsed.get("spoken_text", ""),
             "phase": parsed.get("phase", "questioning"),
             "steps": parsed.get("steps") or [],
+            "vitals": parsed.get("vitals") or {},
             "metadata": parsed.get("metadata") or _default_metadata(),
         }
     return {
         "spoken_text": content[:300] if content else "I'm here. Tell me what's happening.",
         "phase": "questioning",
         "steps": [],
+        "vitals": {},
         "metadata": _default_metadata(),
     }
 
@@ -188,7 +219,10 @@ async def _get_response_openai(
     full = [{"role": "system", "content": SYSTEM_PROMPT}] + [
         {"role": m["role"], "content": m["content"]} for m in messages
     ]
-    resp = await client.chat.completions.create(model=model, messages=full, max_tokens=800)
+    resp = await client.chat.completions.create(
+        model=model, messages=full, max_tokens=1200, temperature=0.1,
+        response_format={"type": "json_object"},
+    )
     content = resp.choices[0].message.content or ""
     parsed = _parse_llm_json(content)
     if parsed and "spoken_text" in parsed:
@@ -196,9 +230,10 @@ async def _get_response_openai(
             "spoken_text": parsed.get("spoken_text", ""),
             "phase": parsed.get("phase", "questioning"),
             "steps": parsed.get("steps") or [],
+            "vitals": parsed.get("vitals") or {},
             "metadata": parsed.get("metadata") or _default_metadata(),
         }
-    return {"spoken_text": content[:300], "phase": "questioning", "steps": [], "metadata": _default_metadata()}
+    return {"spoken_text": content[:300], "phase": "questioning", "steps": [], "vitals": {}, "metadata": _default_metadata()}
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +246,7 @@ async def _get_response_anthropic(
 ) -> dict[str, Any]:
     from anthropic import AsyncAnthropic
     client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-    model = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
+    model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
     api_messages = []
     for i, m in enumerate(messages):
         role = "assistant" if m.get("role") == "assistant" else "user"
@@ -222,7 +257,9 @@ async def _get_response_anthropic(
             ]})
         else:
             api_messages.append({"role": role, "content": m.get("content", "")})
-    resp = await client.messages.create(model=model, max_tokens=800, system=SYSTEM_PROMPT, messages=api_messages)
+    resp = await client.messages.create(
+        model=model, max_tokens=1200, system=SYSTEM_PROMPT, messages=api_messages,
+    )
     content = (resp.content[0].text if resp.content else "") or ""
     parsed = _parse_llm_json(content)
     if parsed and "spoken_text" in parsed:
@@ -230,9 +267,10 @@ async def _get_response_anthropic(
             "spoken_text": parsed.get("spoken_text", ""),
             "phase": parsed.get("phase", "questioning"),
             "steps": parsed.get("steps") or [],
+            "vitals": parsed.get("vitals") or {},
             "metadata": parsed.get("metadata") or _default_metadata(),
         }
-    return {"spoken_text": content[:300], "phase": "questioning", "steps": [], "metadata": _default_metadata()}
+    return {"spoken_text": content[:300], "phase": "questioning", "steps": [], "vitals": {}, "metadata": _default_metadata()}
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +291,7 @@ async def _get_response_gemini(messages: list[dict[str, Any]]) -> dict[str, Any]
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"maxOutputTokens": 800, "temperature": 0.3},
+        "generationConfig": {"maxOutputTokens": 1200, "temperature": 0.1},
     }
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(url, json=payload)
@@ -270,9 +308,10 @@ async def _get_response_gemini(messages: list[dict[str, Any]]) -> dict[str, Any]
             "spoken_text": parsed.get("spoken_text", ""),
             "phase": parsed.get("phase", "questioning"),
             "steps": parsed.get("steps") or [],
+            "vitals": parsed.get("vitals") or {},
             "metadata": parsed.get("metadata") or _default_metadata(),
         }
-    return {"spoken_text": text[:300], "phase": "questioning", "steps": [], "metadata": _default_metadata()}
+    return {"spoken_text": text[:300], "phase": "questioning", "steps": [], "vitals": {}, "metadata": _default_metadata()}
 
 
 # ---------------------------------------------------------------------------
@@ -280,8 +319,8 @@ async def _get_response_gemini(messages: list[dict[str, Any]]) -> dict[str, Any]
 # ---------------------------------------------------------------------------
 
 def _default_metadata() -> dict[str, Any]:
-    return {"urgency": "medium", "diagnosis": None, "call_emergency": False}
+    return {"urgency": "medium", "diagnosis": None, "call_emergency": False, "confidence": 0, "key_findings": []}
 
 
 def _error_response(msg: str) -> dict[str, Any]:
-    return {"spoken_text": msg, "phase": "questioning", "steps": [], "metadata": _default_metadata()}
+    return {"spoken_text": msg, "phase": "questioning", "steps": [], "vitals": {}, "metadata": _default_metadata()}

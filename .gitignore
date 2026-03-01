@@ -1,0 +1,18 @@
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcworkspace/xcuserdata/
+.swiftpm/xcode/xcuserdata/
+
+# macOS
+.DS_Store
+._*
+
+# Backend (also has backend/.gitignore)
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/

@@ -94,6 +94,12 @@ struct PanelBackgroundModifier: ViewModifier {
     }
 }
 
+// Reference colors from First Responder dashboard (primary red, secondary blue).
+extension Color {
+    static let emergencyPrimary = Color(red: 255/255, green: 59/255, blue: 48/255)
+    static let emergencySecondary = Color(red: 10/255, green: 132/255, blue: 255/255)
+}
+
 #if os(visionOS)
 #Preview(windowStyle: .automatic) {
     ContentView()

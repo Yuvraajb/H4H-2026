@@ -13,6 +13,14 @@ enum CrisisAppState: String, CaseIterable {
     case resolved
 }
 
+/// Protocol buttons in the Protocols panel (Dispatch / Live Guidance reference).
+enum EmergencyProtocol: String, CaseIterable {
+    case cpr = "CPR"
+    case choking = "Choking"
+    case bleeding = "Bleeding"
+    case shock = "Shock"
+}
+
 enum CrisisScenario: String, CaseIterable {
     case medical = "Medical"
     case fire = "Fire"
@@ -31,6 +39,8 @@ struct ChatMessage: Identifiable {
     let role: ChatRole
     let text: String
     let timestamp: Date
+    /// When set, show as "ACTION REQUIRED" style (bold label + left border) in Dispatch.
+    var actionRequiredTitle: String? = nil
 
     enum ChatRole {
         case user
@@ -44,16 +54,37 @@ struct ChatMessage: Identifiable {
 class CrisisCopilotModel {
     var state: CrisisAppState = .idle
     var scenario: CrisisScenario = .medical
+    var selectedProtocol: EmergencyProtocol = .cpr
     var inputMode: InputMode = .voice
     var messages: [ChatMessage] = []
     var draftText: String = ""
     var suggestedActions: [String] = []
+
+    /// When non-nil, Dispatch shows "Connected • MM:SS" using this start date.
+    var dispatchConnectedSince: Date? = nil
+
+    /// Stub data for Location & ETA panel.
+    struct LocationStub {
+        var nearestAEDName: String
+        var nearestAEDDetail: String
+        var nearestAEDDistance: String
+        var ambulanceETAMinutes: Int
+        var ambulanceUnit: String
+    }
+    var locationStub: LocationStub = LocationStub(
+        nearestAEDName: "Central Library",
+        nearestAEDDetail: "Floor 1, Main Lobby",
+        nearestAEDDistance: "0.2 miles • 3 min walk",
+        ambulanceETAMinutes: 4,
+        ambulanceUnit: "Unit 402 en route"
+    )
 
     private let greeting = "I'm Crisis Copilot. Tell me what's happening. If this is life-threatening, call emergency services now."
     private let wrapUp = "Session marked resolved. If you need to report again, start a new emergency."
 
     func startEmergency() {
         state = .active
+        dispatchConnectedSince = Date()
         messages = []
         messages.append(ChatMessage(role: .assistant, text: greeting, timestamp: Date()))
         suggestedActions = Self.suggestedActions(for: scenario)
@@ -66,6 +97,7 @@ class CrisisCopilotModel {
 
     func reset() {
         state = .idle
+        dispatchConnectedSince = nil
         messages = []
         draftText = ""
         suggestedActions = []
@@ -77,6 +109,12 @@ class CrisisCopilotModel {
         messages.append(ChatMessage(role: .user, text: t, timestamp: Date()))
         let stub = stubResponse(for: scenario)
         messages.append(ChatMessage(role: .assistant, text: stub, timestamp: Date()))
+    }
+
+    /// Add a message that shows as "ACTION REQUIRED" in Dispatch.
+    func sendActionRequiredMessage(_ text: String) {
+        var msg = ChatMessage(role: .assistant, text: text, timestamp: Date(), actionRequiredTitle: "ACTION REQUIRED")
+        messages.append(msg)
     }
 
     func simulateVoiceInput() {
@@ -96,6 +134,15 @@ class CrisisCopilotModel {
         if state == .active {
             messages.append(ChatMessage(role: .assistant, text: greeting, timestamp: Date()))
         }
+    }
+
+    /// Formatted "Connected • MM:SS" for Dispatch header; returns nil if not connected.
+    var dispatchConnectionDuration: String? {
+        guard let since = dispatchConnectedSince else { return nil }
+        let elapsed = Int(Date().timeIntervalSince(since))
+        let m = elapsed / 60
+        let s = elapsed % 60
+        return String(format: "%02d:%02d", m, s)
     }
 
     private func stubResponse(for s: CrisisScenario) -> String {

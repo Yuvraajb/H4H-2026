@@ -61,6 +61,8 @@ class CrisisCopilotModel {
     var extractedVitals: [String: Double] = [:]    // hr, rr, spo2, gcs, sbp, temp
     var sessionStartTime: Date? = nil
     var isProcessing: Bool = false
+    var isGeneratingReport: Bool = false
+    var reportData: Data? = nil
 
     /// Set from ContentView so each user message can attach a camera frame.
     weak var cameraModel: CameraFeedModel?
@@ -91,8 +93,15 @@ class CrisisCopilotModel {
     func markResolved() {
         state = .resolved
         messages.append(ChatMessage(role: .assistant, text: wrapUp))
-        if let sid = sessionId {
-            Task { @MainActor in _ = await backendService.generateReport(sessionId: sid) }
+        generateReport()
+    }
+
+    func generateReport() {
+        guard let sid = sessionId, !isGeneratingReport else { return }
+        isGeneratingReport = true
+        Task { @MainActor in
+            defer { isGeneratingReport = false }
+            reportData = await backendService.generateReport(sessionId: sid)
         }
     }
 
@@ -110,6 +119,8 @@ class CrisisCopilotModel {
         keyFindings = []
         extractedVitals = [:]
         sessionStartTime = nil
+        isGeneratingReport = false
+        reportData = nil
     }
 
     func sendUserMessage(_ text: String) {
@@ -120,11 +131,15 @@ class CrisisCopilotModel {
         draftText = ""
         isProcessing = true
 
-        // Capture camera frame to attach as visual context
+        // Capture a fresh camera frame + attach visual context
         let imageData = cameraModel?.captureFrame()
+        let visualCtx = latestVisualContext
+        latestVisualContext = nil  // consumed
 
-        // Append detected body landmarks as extra context for the AI
         var messageText = t
+        if let ctx = visualCtx {
+            messageText = "[Camera observation: \(ctx)] \(messageText)"
+        }
         if let poseSummary = poseDetector?.landmarkSummary {
             messageText += "\n[Vision detection: \(poseSummary)]"
         }
@@ -160,6 +175,27 @@ class CrisisCopilotModel {
             } else {
                 let fallback = "I'm having trouble reaching the AI. Make sure the backend is running at port 8000."
                 messages.append(ChatMessage(role: .assistant, text: fallback))
+            }
+        }
+    }
+
+    /// Latest visual context from the camera — silently stored, used on next user message.
+    private var latestVisualContext: String?
+
+    /// Passively capture a camera frame and send it for visual analysis.
+    /// Does NOT add anything to the chat — just updates internal visual context
+    /// so the next user message benefits from what the camera sees.
+    func sendVisualCheckIn() {
+        guard state == .active, !isProcessing else { return }
+        guard let imageData = cameraModel?.captureFrame() else { return }
+
+        Task { @MainActor in
+            let description = await backendService.analyzeFrame(
+                sessionId: sessionId,
+                imageData: imageData
+            )
+            if let description, !description.isEmpty {
+                latestVisualContext = description
             }
         }
     }

@@ -11,6 +11,8 @@ import SwiftUI
 import AppKit
 #endif
 
+// MARK: - CameraFeedModel
+
 @MainActor
 @Observable
 final class CameraFeedModel: NSObject {
@@ -75,10 +77,9 @@ final class CameraFeedModel: NSObject {
         #if os(macOS)
         let ci = CIImage(cvPixelBuffer: pb)
         guard let cg = CIContext().createCGImage(ci, from: ci.extent) else { return nil }
-        // Scale down to max 640px wide to keep payload small
         let original = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
         let scaled = original.resized(toMaxWidth: 640)
-        return scaled.jpegData(compressionQuality: 0.5)
+        return scaled.jpegData(compressionQuality: 0.35)
         #else
         return nil
         #endif
@@ -88,7 +89,6 @@ final class CameraFeedModel: NSObject {
 
     private func configureAndStartSession() {
         #if os(macOS)
-        // macOS: use default video device (e.g. FaceTime HD); no front/back
         let device = AVCaptureDevice.default(for: .video)
         #else
         let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
@@ -115,7 +115,6 @@ final class CameraFeedModel: NSObject {
             return
         }
 
-        // Video data output for frame capture
         let videoOutput = AVCaptureVideoDataOutput()
         videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
         videoOutput.alwaysDiscardsLateVideoFrames = true
@@ -190,7 +189,7 @@ private final class CameraFeedStore: @unchecked Sendable {
 }
 
 /// Shared instance — safe to access from any thread/queue.
-private let cameraFeedStore = CameraFeedStore()
+nonisolated(unsafe) private let cameraFeedStore = CameraFeedStore()
 
 // MARK: - NSImage JPEG helper
 

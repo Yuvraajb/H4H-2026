@@ -46,65 +46,62 @@ private final class PoseThrottle: @unchecked Sendable {
     }
 }
 
-// MARK: - Landmark extraction (free function — not actor-isolated)
+// MARK: - Landmark extraction
+
+private let jointMappings: [(VNHumanBodyPoseObservation.JointName, String, String?, DetectedLandmark.LandmarkCategory)] = [
+    // Pulse points — most medically relevant
+    (.leftWrist,    "Left Wrist",       "Radial Pulse",     .pulsePoint),
+    (.rightWrist,   "Right Wrist",      "Radial Pulse",     .pulsePoint),
+    (.neck,         "Neck",             "Carotid Pulse",    .pulsePoint),
+    (.leftAnkle,    "Left Ankle",       "Pedal Pulse",      .pulsePoint),
+    (.rightAnkle,   "Right Ankle",      "Pedal Pulse",      .pulsePoint),
+
+    // Head
+    (.nose,         "Nose",             "Airway",           .head),
+    (.leftEye,      "Left Eye",         "Pupil Response",   .head),
+    (.rightEye,     "Right Eye",        "Pupil Response",   .head),
+    (.leftEar,      "Left Ear",         nil,                .head),
+    (.rightEar,     "Right Ear",        nil,                .head),
+
+    // Torso
+    (.leftShoulder, "Left Shoulder",    nil,                .torso),
+    (.rightShoulder,"Right Shoulder",   nil,                .torso),
+    (.leftHip,      "Left Hip",         "Femoral Pulse",    .pulsePoint),
+    (.rightHip,     "Right Hip",        "Femoral Pulse",    .pulsePoint),
+    (.root,         "Root (Pelvis)",    nil,                .torso),
+
+    // Joints with pulse-relevant labels
+    (.leftElbow,    "Left Elbow",       "Brachial Pulse",   .pulsePoint),
+    (.rightElbow,   "Right Elbow",      "Brachial Pulse",   .pulsePoint),
+    (.leftKnee,     "Left Knee",        "Popliteal Pulse",  .pulsePoint),
+    (.rightKnee,    "Right Knee",       "Popliteal Pulse",  .pulsePoint),
+]
 
 private func extractLandmarks(from observation: VNHumanBodyPoseObservation) -> [DetectedLandmark] {
     var landmarks: [DetectedLandmark] = []
-
-    let jointMappings: [(VNHumanBodyPoseObservation.JointName, String, String?, DetectedLandmark.LandmarkCategory)] = [
-        // Pulse points — most medically relevant
-        (.leftWrist,    "Left Wrist",       "Radial Pulse",     .pulsePoint),
-        (.rightWrist,   "Right Wrist",      "Radial Pulse",     .pulsePoint),
-        (.neck,         "Neck",             "Carotid Pulse",    .pulsePoint),
-        (.leftAnkle,    "Left Ankle",       "Pedal Pulse",      .pulsePoint),
-        (.rightAnkle,   "Right Ankle",      "Pedal Pulse",      .pulsePoint),
-
-        // Head
-        (.nose,         "Nose",             "Airway",           .head),
-        (.leftEye,      "Left Eye",         "Pupil Response",   .head),
-        (.rightEye,     "Right Eye",        "Pupil Response",   .head),
-        (.leftEar,      "Left Ear",         nil,                .head),
-        (.rightEar,     "Right Ear",        nil,                .head),
-
-        // Torso
-        (.leftShoulder, "Left Shoulder",    nil,                .torso),
-        (.rightShoulder,"Right Shoulder",   nil,                .torso),
-        (.leftHip,      "Left Hip",         "Femoral Pulse",    .pulsePoint),
-        (.rightHip,     "Right Hip",        "Femoral Pulse",    .pulsePoint),
-        (.root,         "Root (Pelvis)",    nil,                .torso),
-
-        // Joints with pulse-relevant labels
-        (.leftElbow,    "Left Elbow",       "Brachial Pulse",   .pulsePoint),
-        (.rightElbow,   "Right Elbow",      "Brachial Pulse",   .pulsePoint),
-        (.leftKnee,     "Left Knee",        "Popliteal Pulse",  .pulsePoint),
-        (.rightKnee,    "Right Knee",       "Popliteal Pulse",  .pulsePoint),
-    ]
-
     for (jointName, name, medicalLabel, category) in jointMappings {
         guard let point = try? observation.recognizedPoint(jointName),
               point.confidence > 0.3 else { continue }
         landmarks.append(DetectedLandmark(
             name: name,
             medicalLabel: medicalLabel,
-            point: point.location, // normalized, bottom-left origin
+            point: point.location,
             confidence: point.confidence,
             category: category
         ))
     }
-
     return landmarks
 }
 
 // MARK: - Detector
 
-@MainActor
 @Observable
 final class BodyPoseDetector {
     var detectedLandmarks: [DetectedLandmark] = []
     var isDetecting: Bool = false
     var showOverlay: Bool = true
 
-    private let throttle = PoseThrottle()
+    @ObservationIgnored private let throttle = PoseThrottle()
 
     /// Process a pixel buffer from the camera and detect body pose landmarks.
     /// Called from the camera frame queue (nonisolated).
@@ -120,17 +117,17 @@ final class BodyPoseDetector {
         }
 
         guard let observation = request.results?.first else {
-            Task { @MainActor in
-                self.detectedLandmarks = []
-                self.isDetecting = false
+            DispatchQueue.main.async { [weak self] in
+                self?.detectedLandmarks = []
+                self?.isDetecting = false
             }
             return
         }
 
         let landmarks = extractLandmarks(from: observation)
-        Task { @MainActor in
-            self.detectedLandmarks = landmarks
-            self.isDetecting = !landmarks.isEmpty
+        DispatchQueue.main.async { [weak self] in
+            self?.detectedLandmarks = landmarks
+            self?.isDetecting = !landmarks.isEmpty
         }
     }
 

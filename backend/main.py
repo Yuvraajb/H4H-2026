@@ -172,6 +172,33 @@ async def chat(req: ChatRequest):
 
 
 # ---------------------------------------------------------------------------
+# Visual frame analysis (passive — returns description only, no chat message)
+# ---------------------------------------------------------------------------
+
+class FrameAnalysisRequest(BaseModel):
+    session_id: Optional[str] = None
+    image_base64: str
+
+
+class FrameAnalysisResponse(BaseModel):
+    description: str
+
+
+@app.post("/api/analyze-frame", response_model=FrameAnalysisResponse)
+async def analyze_frame(req: FrameAnalysisRequest):
+    """Analyze a camera frame and return a brief description. Does NOT touch conversation history."""
+    try:
+        result = await llm_service.get_response(
+            [{"role": "user", "content": "Briefly describe what you see in this image in 1-2 sentences. Focus on medically relevant details: person's posture, visible injuries, skin color, breathing, consciousness, bleeding, distress."}],
+            image_b64=req.image_base64,
+        )
+        desc = result.get("spoken_text", "").strip()
+        return FrameAnalysisResponse(description=desc)
+    except Exception:
+        return FrameAnalysisResponse(description="")
+
+
+# ---------------------------------------------------------------------------
 # Image lookup (Wikipedia)
 # ---------------------------------------------------------------------------
 

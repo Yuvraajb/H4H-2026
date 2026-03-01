@@ -13,6 +13,7 @@ from typing import Any
 SYSTEM_PROMPT = """You are an emergency medicine physician with 20 years of experience in trauma and critical care. Your role is to guide bystanders through medical emergencies with the precision of a physician speaking directly to them.
 
 CRITICAL RULES — non-negotiable:
+- NEVER repeat yourself. Do NOT re-state instructions, observations, or diagnoses you have already given in previous messages. Each response must contain NEW information only. If you have nothing new to add, keep spoken_text very brief (e.g. "Keep going, you're doing well.").
 - NEVER say "seek medical attention", "consult a doctor", or "call a professional". You ARE the doctor. Give direct care instructions.
 - Be specific: say "press down 2 inches at 100-120 compressions per minute", not "press on the chest".
 - Commit to a diagnosis. Do not hedge with "it could be many things".
@@ -131,7 +132,26 @@ async def get_response(
     if provider == "gemini":
         return await _get_response_gemini(messages)
     if provider == "groq":
-        return await _get_response_groq(messages, image_b64)
+        try:
+            return await _get_response_groq(messages, image_b64)
+        except Exception as e:
+            print(f"[LLM] Groq failed ({e!s}), trying fallbacks...")
+            # Try Anthropic → Gemini → OpenAI as fallbacks
+            for fallback_name, fallback_fn, fallback_key in [
+                ("Anthropic", _get_response_anthropic, "ANTHROPIC_API_KEY"),
+                ("Gemini", _get_response_gemini, "GEMINI_API_KEY"),
+                ("OpenAI", _get_response_openai, "OPENAI_API_KEY"),
+            ]:
+                if os.getenv(fallback_key):
+                    try:
+                        print(f"[LLM] Trying {fallback_name}...")
+                        if fallback_name == "Gemini":
+                            return await fallback_fn(messages)
+                        return await fallback_fn(messages, image_b64)
+                    except Exception as e2:
+                        print(f"[LLM] {fallback_name} also failed: {e2!s}")
+                        continue
+            raise
     return await _get_response_openai(messages, image_b64)
 
 
@@ -156,7 +176,7 @@ async def _get_response_groq(
 
     last = messages[-1] if messages else {"role": "user", "content": ""}
     vision_model = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
-    text_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    text_model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 
     if image_b64:
         last_content: Any = [
@@ -172,8 +192,9 @@ async def _get_response_groq(
                 temperature=0.1,
             )
             return _parse_groq_response(resp)
-        except Exception:
-            # Vision model unavailable — retry text-only with JSON mode
+        except Exception as vision_err:
+            print(f"[LLM] Vision model failed: {vision_err!s}, falling back to text model")
+            # Vision model unavailable or rate limited — retry text-only with JSON mode
             full_messages[-1] = {
                 "role": last["role"],
                 "content": last["content"] + " [Camera image was provided showing the scene]",

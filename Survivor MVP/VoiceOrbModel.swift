@@ -115,11 +115,15 @@ final class VoiceOrbModel {
         let data = (try? Data(contentsOf: url)) ?? Data()
         try? FileManager.default.removeItem(at: url)
 
-        guard !data.isEmpty else {
+        print("[VoiceOrb] Audio file size: \(data.count) bytes")
+
+        guard data.count > 1000 else {
+            print("[VoiceOrb] Audio too small (\(data.count) bytes), likely empty recording")
             orbState = .idle; statusText = "nothing heard — tap to try again"; return
         }
 
         let transcript = await backendService.speechToText(audioData: data) ?? ""
+        print("[VoiceOrb] STT transcript: '\(transcript)'")
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmed.isEmpty else {

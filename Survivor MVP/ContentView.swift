@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var poseDetector = BodyPoseDetector()
     @State private var cameraPreviewEnabled = true
     @State private var showPoseOverlay = true
+    @State private var visualCheckInTimer: Timer?
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -41,13 +42,66 @@ struct ContentView: View {
             model.cameraModel = cameraModel
             model.poseDetector = poseDetector
             model.startEmergency()
+            startVisualCheckInTimer()
         }
-        .onDisappear { cameraModel.stop() }
+        .onDisappear {
+            visualCheckInTimer?.invalidate()
+            visualCheckInTimer = nil
+            cameraModel.stop()
+        }
+    }
+
+    /// Start a repeating timer that sends a camera frame to the AI every 5 seconds
+    /// when nobody is talking (orb is idle) and a session is active.
+    private func startVisualCheckInTimer() {
+        visualCheckInTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
+            Task { @MainActor in
+                // Only send when idle — skip if user is speaking, AI is thinking, or AI is speaking
+                guard voiceOrbModel.orbState == .idle,
+                      model.state == .active,
+                      !model.isProcessing else { return }
+                model.sendVisualCheckIn()
+            }
+        }
     }
 
     /// Most recent assistant steps (drives the top-left overlay).
     private var latestSteps: [ChatStep] {
         model.messages.last(where: { $0.role == .assistant && !$0.steps.isEmpty })?.steps ?? []
+    }
+
+    /// Filter landmarks based on the latest AI instruction so the overlay
+    /// only highlights what's medically relevant right now.
+    private var relevantLandmarks: [DetectedLandmark] {
+        let all = poseDetector.detectedLandmarks
+        guard model.state == .active else { return all }
+
+        let latestText = (model.messages.last(where: { $0.role == .assistant })?.text ?? "").lowercased()
+        let stepText = latestSteps.map(\.instruction).joined(separator: " ").lowercased()
+        let combined = latestText + " " + stepText
+
+        if combined.contains("pulse") || combined.contains("check pulse") {
+            if combined.contains("wrist") || combined.contains("radial") {
+                return all.filter { $0.name == "Left Wrist" || $0.name == "Right Wrist" }
+            }
+            if combined.contains("neck") || combined.contains("carotid") {
+                return all.filter { $0.name == "Neck" }
+            }
+            return all.filter { $0.category == .pulsePoint }
+        }
+        if combined.contains("cpr") || combined.contains("chest compression") || combined.contains("compress") {
+            let keep: Set<String> = ["Neck", "Left Shoulder", "Right Shoulder", "Root (Pelvis)"]
+            return all.filter { keep.contains($0.name) }
+        }
+        if combined.contains("airway") || combined.contains("head tilt") || combined.contains("chin lift") {
+            return all.filter { $0.name == "Nose" || $0.name == "Neck" }
+        }
+        if combined.contains("breathing") || combined.contains("respiratory") {
+            let keep: Set<String> = ["Nose", "Left Shoulder", "Right Shoulder"]
+            return all.filter { keep.contains($0.name) }
+        }
+
+        return all
     }
 
     @ViewBuilder
@@ -60,9 +114,9 @@ struct ContentView: View {
                     CameraPreview(session: session)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                    // Body pose landmark overlay
+                    // Body pose landmark overlay (filtered by current AI instruction)
                     if showPoseOverlay {
-                        BodyPoseOverlayView(landmarks: poseDetector.detectedLandmarks)
+                        BodyPoseOverlayView(landmarks: relevantLandmarks)
                             .allowsHitTesting(false)
                     }
                 }
@@ -101,8 +155,8 @@ struct ContentView: View {
                 // Body detection status badge
                 if cameraPreviewEnabled && showPoseOverlay {
                     PoseDetectionBadge(
-                        landmarkCount: poseDetector.detectedLandmarks.count,
-                        pulsePointCount: poseDetector.detectedLandmarks.filter { $0.category == .pulsePoint }.count,
+                        landmarkCount: relevantLandmarks.count,
+                        pulsePointCount: relevantLandmarks.filter { $0.category == .pulsePoint }.count,
                         isDetecting: poseDetector.isDetecting
                     )
                 }
@@ -162,6 +216,7 @@ struct VoicePanel: View {
     @State private var outerExpand = false
     @State private var thinkingStart: Date? = nil
     @State private var emergencyPulse = false
+    @State private var pdfURL: URL? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -330,9 +385,57 @@ struct VoicePanel: View {
                     }
                 }
             }
+
+            // Report footer
+            Divider()
+            HStack(spacing: 10) {
+                if model.isGeneratingReport {
+                    ProgressView().scaleEffect(0.75)
+                    Text("Generating report…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                } else if let url = pdfURL {
+                    Image(systemName: "doc.text.fill")
+                        .foregroundStyle(.green)
+                        .font(.system(size: 13))
+                    Text("Report ready")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    ShareLink(item: url, preview: SharePreview("Incident Report")) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 14))
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button {
+                        model.generateReport()
+                    } label: {
+                        Label("Generate Report", systemImage: "doc.text.fill")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .disabled(model.state == .idle)
+                    Spacer()
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
         }
         .background(.background)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .onChange(of: model.reportData) { _, data in
+            guard let data else { return }
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd_HH-mm"
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("Incident-Report-\(formatter.string(from: Date())).pdf")
+            try? data.write(to: url)
+            pdfURL = url
+        }
+        .onChange(of: model.state) { _, newState in
+            if newState == .idle { pdfURL = nil }
+        }
     }
 
     // MARK: - Animations
@@ -874,19 +977,6 @@ private struct StepCard: View {
         }
         .padding(12)
         .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-}
-
-// MARK: - Panel background (visionOS: glass; macOS: material)
-struct PanelBackgroundModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        #if os(visionOS)
-        content
-            .glassBackgroundEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        #else
-        content
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        #endif
     }
 }
 

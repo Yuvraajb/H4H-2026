@@ -131,6 +131,34 @@ final class BackendService {
         }
     }
 
+    /// Analyze a camera frame passively — returns a text description of what the camera sees.
+    /// Does NOT add to conversation history.
+    func analyzeFrame(
+        sessionId: String?,
+        imageData: Data
+    ) async -> String? {
+        guard let url = URL(string: "\(baseURL)/api/analyze-frame") else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 10
+
+        var body: [String: Any] = ["image_base64": imageData.base64EncodedString()]
+        if let sid = sessionId { body["session_id"] = sid }
+
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else { return nil }
+        request.httpBody = bodyData
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return nil }
+            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            return json?["description"] as? String
+        } catch {
+            return nil
+        }
+    }
+
     /// Sends an empty message to start a new session (used when AI greeted first; now session is created on first user message).
     func startSession() async -> (greeting: String, sessionId: String)? {
         let result = await sendMessage(sessionId: nil, text: "")

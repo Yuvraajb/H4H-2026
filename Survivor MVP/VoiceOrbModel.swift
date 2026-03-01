@@ -1,0 +1,168 @@
+import Foundation
+import AVFoundation
+import Speech
+import SwiftUI
+
+@Observable
+@MainActor
+final class VoiceOrbModel {
+
+    enum OrbState { case idle, listening, thinking, speaking }
+
+    var orbState: OrbState = .idle
+    var statusText = "tap to speak"
+    var errorText: String? = nil
+
+    weak var copilotModel: CrisisCopilotModel?
+
+    private var audioEngine = AVAudioEngine()
+    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var recognitionTask: SFSpeechRecognitionTask?
+    private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    private var audioPlayer: AVAudioPlayer?
+    private var partialTranscript = ""
+    private let backendService = BackendService()
+
+    // MARK: - Public
+
+    func handleTap() {
+        switch orbState {
+        case .idle:     Task { await requestAndStart() }
+        case .listening: Task { await stopAndProcess() }
+        case .speaking: stopPlayback()
+        case .thinking: break
+        }
+    }
+
+    // MARK: - Recording
+
+    private func requestAndStart() async {
+        let speechAuth = await withCheckedContinuation { cont in
+            SFSpeechRecognizer.requestAuthorization { cont.resume(returning: $0) }
+        }
+        guard speechAuth == .authorized else {
+            errorText = "Speech recognition not authorized in Settings."
+            return
+        }
+        let micGranted = await AVAudioApplication.requestRecordPermission()
+        guard micGranted else {
+            errorText = "Microphone access denied — allow it in Settings."
+            return
+        }
+        startRecording()
+    }
+
+    private func startRecording() {
+        recognitionTask?.cancel()
+        recognitionTask = nil
+        partialTranscript = ""
+
+        let req = SFSpeechAudioBufferRecognitionRequest()
+        req.shouldReportPartialResults = true
+        recognitionRequest = req
+
+        recognitionTask = speechRecognizer?.recognitionTask(with: req) { [weak self] result, error in
+            Task { @MainActor [weak self] in
+                if let r = result {
+                    self?.partialTranscript = r.bestTranscription.formattedString
+                }
+                if let e = error, (e as NSError).code != 216 { // 216 = cancelled
+                    self?.orbState = .idle
+                    self?.statusText = "tap to speak"
+                }
+            }
+        }
+
+        let inputNode = audioEngine.inputNode
+        let format = inputNode.outputFormat(forBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buf, _ in
+            req.append(buf)
+        }
+
+        do {
+            audioEngine.prepare()
+            try audioEngine.start()
+            orbState = .listening
+            statusText = "listening… tap to stop"
+            errorText = nil
+        } catch {
+            errorText = "Could not start microphone."
+            cleanupEngine()
+        }
+    }
+
+    private func stopAndProcess() async {
+        let text = partialTranscript
+        cleanupEngine()
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            orbState = .idle
+            statusText = "nothing heard — tap to try again"
+            return
+        }
+        await processText(trimmed)
+    }
+
+    private func cleanupEngine() {
+        audioEngine.stop()
+        audioEngine.inputNode.removeTap(onBus: 0)
+        recognitionRequest?.endAudio()
+        recognitionTask?.cancel()
+        recognitionRequest = nil
+        recognitionTask = nil
+    }
+
+    // MARK: - LLM
+
+    private func processText(_ text: String) async {
+        guard let model = copilotModel else { return }
+        orbState = .thinking
+        statusText = "thinking…"
+
+        let beforeCount = model.messages.count
+        model.sendUserMessage(text) // fires Task internally; user msg appended synchronously
+
+        // Wait for the assistant response (max 30 s, poll every 200 ms)
+        var waited = 0
+        while model.messages.count < beforeCount + 2, waited < 30_000 {
+            try? await Task.sleep(for: .milliseconds(200))
+            waited += 200
+        }
+
+        let reply = model.messages.last(where: { $0.role == .assistant })?.text ?? ""
+        if reply.isEmpty {
+            orbState = .idle
+            statusText = "tap to speak"
+        } else {
+            await playTTS(reply)
+        }
+    }
+
+    // MARK: - TTS
+
+    private func playTTS(_ text: String) async {
+        orbState = .speaking
+        statusText = "speaking…"
+
+        if let data = await backendService.requestTTS(text: String(text.prefix(500))) {
+            do {
+                audioPlayer = try AVAudioPlayer(data: data)
+                audioPlayer?.play()
+                while audioPlayer?.isPlaying == true {
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+            } catch {}
+        }
+
+        orbState = .idle
+        statusText = "tap to speak"
+    }
+
+    private func stopPlayback() {
+        audioPlayer?.stop()
+        audioPlayer = nil
+        orbState = .idle
+        statusText = "tap to speak"
+    }
+}

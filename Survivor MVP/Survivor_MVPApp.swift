@@ -26,6 +26,14 @@ struct Survivor_MVPApp: App {
         }
 
         #if os(visionOS)
+        WindowGroup("Voice Orb", id: "voice-orb") {
+            VoiceOrbView()
+                .environment(crisisCopilotModel)
+                .glassBackgroundEffect()
+        }
+        .defaultSize(width: 280, height: 380)
+        .windowResizability(.contentSize)
+
         ImmersiveSpace(id: appModel.immersiveSpaceID) {
             ImmersiveView()
                 .environment(appModel)

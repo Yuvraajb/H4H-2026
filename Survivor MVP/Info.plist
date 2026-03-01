@@ -9,6 +9,10 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>PulseCoach uses the camera so you can keep the person in view while following first aid steps.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Crisis Copilot uses the microphone to listen to your voice so you can speak to the AI assistant hands-free.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Crisis Copilot uses speech recognition to transcribe your voice into text for the AI assistant.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationPreferredDefaultSceneSessionRole</key>

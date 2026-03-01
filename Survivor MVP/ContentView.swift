@@ -11,6 +11,9 @@ struct ContentView: View {
     @Environment(CrisisCopilotModel.self) private var model
     @State private var cameraModel = CameraFeedModel()
     @State private var cameraPreviewEnabled = true
+    #if os(visionOS)
+    @Environment(\.openWindow) private var openWindow
+    #endif
 
     var body: some View {
         ZStack {
@@ -28,6 +31,27 @@ struct ContentView: View {
                 Spacer(minLength: 0)
             }
             .padding(24)
+
+            #if os(visionOS)
+            // Voice orb launcher — bottom right
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    Button {
+                        openWindow(id: "voice-orb")
+                    } label: {
+                        Label("Voice", systemImage: "mic.circle.fill")
+                            .font(.headline)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.bordered)
+                    .glassBackgroundEffect(in: Capsule())
+                    .padding(32)
+                }
+            }
+            #endif
         }
         .frame(minWidth: 500, minHeight: 500)
         .onAppear {

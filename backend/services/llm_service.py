@@ -1,5 +1,5 @@
 """
-LLM integration for Crisis Copilot. Supports OpenAI, Anthropic, and Gemini.
+LLM integration for Crisis Copilot. Supports OpenAI, Anthropic, Gemini, and Groq.
 Returns structured JSON: spoken_text + metadata (step, urgency, image_query, category, display_text).
 """
 from __future__ import annotations
@@ -61,12 +61,14 @@ async def get_response(messages: list[dict[str, str]]) -> dict[str, Any]:
     Send conversation history to LLM and return parsed { spoken_text, metadata }.
     messages: list of { "role": "user"|"assistant"|"system", "content": "..." }
     """
-    provider = os.getenv("LLM_PROVIDER", "gemini").lower()
+    provider = os.getenv("LLM_PROVIDER", "groq").lower()
 
     if provider == "anthropic":
         return await _get_response_anthropic(messages)
     if provider == "gemini":
         return await _get_response_gemini(messages)
+    if provider == "groq":
+        return await _get_response_groq(messages)
     return await _get_response_openai(messages)
 
 
@@ -130,12 +132,45 @@ async def _get_response_anthropic(messages: list[dict[str, str]]) -> dict[str, A
     }
 
 
+async def _get_response_groq(messages: list[dict[str, str]]) -> dict[str, Any]:
+    """Groq is OpenAI-compatible; use OpenAI client with Groq base URL."""
+    from openai import AsyncOpenAI
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        return {"spoken_text": "Configure GROQ_API_KEY in backend/.env", "metadata": _default_metadata()}
+    model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    client = AsyncOpenAI(base_url="https://api.groq.com/openai/v1", api_key=api_key)
+    full = [{"role": "system", "content": SYSTEM_PROMPT}] + [
+        {"role": m["role"], "content": m["content"]} for m in messages
+    ]
+    try:
+        resp = await client.chat.completions.create(
+            model=model,
+            messages=full,
+            max_tokens=500,
+            temperature=0.3,
+        )
+        content = resp.choices[0].message.content or ""
+    except Exception as e:
+        raise RuntimeError(f"Groq API error: {e!s}")
+    parsed = _parse_llm_json(content)
+    if parsed and "spoken_text" in parsed:
+        return {
+            "spoken_text": parsed.get("spoken_text", ""),
+            "metadata": parsed.get("metadata") or _default_metadata(),
+        }
+    return {
+        "spoken_text": content[:500] if content else "I'm here. What's happening now?",
+        "metadata": _default_metadata(),
+    }
+
+
 async def _get_response_gemini(messages: list[dict[str, str]]) -> dict[str, Any]:
     import httpx
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         return {"spoken_text": "Configure GEMINI_API_KEY.", "metadata": _default_metadata()}
-    model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     # Build prompt: system + conversation
     parts = [SYSTEM_PROMPT + "\n\nConversation:\n"]
     for m in messages:
@@ -150,7 +185,13 @@ async def _get_response_gemini(messages: list[dict[str, str]]) -> dict[str, Any]
     }
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(url, json=payload)
-        resp.raise_for_status()
+        if resp.status_code != 200:
+            try:
+                err_body = resp.json()
+                msg = err_body.get("error", {}).get("message", resp.text[:200])
+            except Exception:
+                msg = resp.text[:200] if resp.text else f"HTTP {resp.status_code}"
+            raise RuntimeError(f"Gemini API error: {msg}")
         data = resp.json()
     text = ""
     for c in data.get("candidates", []):

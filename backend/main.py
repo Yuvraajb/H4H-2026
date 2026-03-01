@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -19,11 +20,17 @@ from pydantic import BaseModel
 from services.session_manager import session_manager
 from services import llm_service
 
-load_dotenv()
+# Load .env from backend directory so it works when run from project root or backend/
+_env_path = Path(__file__).resolve().parent / ".env"
+load_dotenv(_env_path)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Log so you can confirm .env is loaded when running the backend
+    provider = os.getenv("LLM_PROVIDER", "groq").lower()
+    groq_ok = bool(os.getenv("GROQ_API_KEY"))
+    print(f"[Crisis Copilot] LLM_PROVIDER={provider}, GROQ_API_KEY set={groq_ok}")
     yield
     # cleanup if needed
 
@@ -90,7 +97,12 @@ async def chat(req: ChatRequest):
     try:
         result = await llm_service.get_response(messages)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"LLM error: {str(e)}")
+        # Return 200 with error message so the app can show it (connection worked, LLM failed)
+        spoken = f"AI temporarily unavailable: {str(e)} Check GEMINI_API_KEY in backend/.env and that the backend is running."
+        metadata = {"step": 0, "urgency": "low", "image_query": None, "category": "other", "display_text": "Retry or check backend."}
+        session_manager.append_message(session_id, "assistant", spoken)
+        session_manager.append_metadata(session_id, metadata)
+        return ChatResponse(response={"spoken_text": spoken, "metadata": metadata}, session_id=session_id)
 
     spoken = result.get("spoken_text", "")
     metadata = result.get("metadata") or {}

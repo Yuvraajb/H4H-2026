@@ -34,18 +34,35 @@ final class BackendService {
 
     /// Use 127.0.0.1 so simulator can reach backend (HTTP allowed via NSAllowsLocalNetworking in Info.plist).
     private static let defaultBaseURLValue = "http://127.0.0.1:8000"
+    /// Fallback for environments where 127.0.0.1 is not reachable.
+    private static let fallbackBaseURLValue = "http://localhost:8000"
+    /// When testing on a physical device, set this to your Mac’s IP (e.g. "http://192.168.1.100:8000") so the device can reach the backend.
+    static var deviceBaseURLOverride: String?
 
     init(baseURL: String? = nil) {
-        let url = baseURL ?? Self.defaultBaseURLValue
+        let url = baseURL ?? Self.deviceBaseURLOverride ?? Self.defaultBaseURLValue
         self.baseURL = url.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         self.session = URLSession.shared
         self.decoder = JSONDecoder()
     }
 
     /// POST /api/chat — send user message, get AI response and session_id.
-    /// Returns nil on any failure (network, decode, 4xx/5xx).
+    /// Tries baseURL then fallback (localhost). Returns nil on any failure (network, decode, 4xx/5xx).
     func sendMessage(sessionId: String?, text: String) async -> (responseText: String, metadata: ChatResponsePayload.MetadataPayload?, sessionId: String)? {
-        let url = URL(string: "\(baseURL)/api/chat")!
+        var urlsToTry = [baseURL, Self.fallbackBaseURLValue.trimmingCharacters(in: CharacterSet(charactersIn: "/"))]
+        if let deviceURL = Self.deviceBaseURLOverride?.trimmingCharacters(in: CharacterSet(charactersIn: "/")), !urlsToTry.contains(deviceURL) {
+            urlsToTry.append(deviceURL)
+        }
+        for base in urlsToTry {
+            if let result = await performChat(baseURL: base, sessionId: sessionId, text: text) {
+                return result
+            }
+        }
+        return nil
+    }
+
+    private func performChat(baseURL: String, sessionId: String?, text: String) async -> (responseText: String, metadata: ChatResponsePayload.MetadataPayload?, sessionId: String)? {
+        guard let url = URL(string: "\(baseURL)/api/chat") else { return nil }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -56,8 +73,8 @@ final class BackendService {
             "message": text,
         ]
         let validBody = body.compactMapValues { $0 }
-        guard let data = try? JSONSerialization.data(withJSONObject: validBody) else { return nil }
-        request.httpBody = data
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: validBody) else { return nil }
+        request.httpBody = bodyData
         request.timeoutInterval = 30
 
         do {

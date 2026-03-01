@@ -104,7 +104,9 @@ class CrisisCopilotModel {
                 sessionId = result.sessionId
                 messages.append(ChatMessage(role: .assistant, text: result.responseText, timestamp: Date()))
             } else {
-                messages.append(ChatMessage(role: .assistant, text: stubResponse(for: scenario), timestamp: Date()))
+                let fallback = stubResponse(for: scenario)
+                let withHint = fallback + "\n\n(Backend unreachable. Start it: cd backend && python3 run.py. On a physical device? Set BackendService.deviceBaseURLOverride to your Mac’s IP, e.g. \"http://192.168.1.x:8000\".)"
+                messages.append(ChatMessage(role: .assistant, text: withHint, timestamp: Date()))
             }
         }
     }

@@ -44,7 +44,13 @@ final class VoiceOrbModel {
             errorText = "Speech recognition not authorized in Settings."
             return
         }
+        #if os(macOS)
+        let micGranted = await withCheckedContinuation { cont in
+            AVCaptureDevice.requestAccess(for: .audio) { cont.resume(returning: $0) }
+        }
+        #else
         let micGranted = await AVAudioApplication.requestRecordPermission()
+        #endif
         guard micGranted else {
             errorText = "Microphone access denied — allow it in Settings."
             return

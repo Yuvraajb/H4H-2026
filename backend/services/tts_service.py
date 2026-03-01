@@ -7,8 +7,7 @@ from typing import Tuple
 
 import httpx
 
-# Calm, clear voices: Rachel or Josh
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # Rachel
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "JBFqnCBsd6RMkjVDRZzb")  # George
 ELEVENLABS_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 
 
@@ -19,8 +18,8 @@ async def get_audio_bytes(text: str) -> Tuple[bytes, str]:
 
     url = ELEVENLABS_URL.format(voice_id=ELEVENLABS_VOICE_ID)
     payload = {
-        "text": text[:1000],  # limit length
-        "model_id": "eleven_monolingual_v1",
+        "text": text[:1000],
+        "model_id": "eleven_turbo_v2_5",
     }
     headers = {
         "Accept": "audio/mpeg",

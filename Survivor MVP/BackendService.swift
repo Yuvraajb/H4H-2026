@@ -121,6 +121,31 @@ final class BackendService {
         }
     }
 
+    /// POST /api/stt — sends raw WAV bytes, returns transcribed text or nil.
+    func speechToText(audioData: Data) async -> String? {
+        for base in [baseURL, Self.fallbackBaseURLValue.trimmingCharacters(in: CharacterSet(charactersIn: "/"))] {
+            if let text = await performSTT(baseURL: base, audioData: audioData) { return text }
+        }
+        return nil
+    }
+
+    private func performSTT(baseURL: String, audioData: Data) async -> String? {
+        guard let url = URL(string: "\(baseURL)/api/stt") else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("audio/wav", forHTTPHeaderField: "Content-Type")
+        request.httpBody = audioData
+        request.timeoutInterval = 60
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return nil }
+            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            return json?["text"] as? String
+        } catch {
+            return nil
+        }
+    }
+
     /// POST /api/report/{session_id}/generate — returns PDF data or nil.
     func generateReport(sessionId: String) async -> Data? {
         let url = URL(string: "\(baseURL)/api/report/\(sessionId)/generate")!

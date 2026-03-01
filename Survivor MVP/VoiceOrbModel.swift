@@ -1,6 +1,5 @@
 import Foundation
 import AVFoundation
-import Speech
 import SwiftUI
 
 @Observable
@@ -15,52 +14,42 @@ final class VoiceOrbModel {
 
     weak var copilotModel: CrisisCopilotModel?
 
-    private var audioEngine = AVAudioEngine() // recreated each session
-    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
-    private var recognitionTask: SFSpeechRecognitionTask?
-    private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    private var audioEngine = AVAudioEngine()
+    private var audioFile: AVAudioFile?
+    private var recordingURL: URL?
     private var audioPlayer: AVAudioPlayer?
-    private var partialTranscript = ""
     private let backendService = BackendService()
 
     // MARK: - Public
 
-    /// Called once on launch — plays opening greeting via TTS and initialises the session.
+    /// Called once on launch — speaks the opening greeting and initialises the session.
     func autoGreet() async {
         guard let model = copilotModel else { return }
         model.startEmergency()
-        // startEmergency appends the greeting message; grab it and speak it
         let text = model.messages.last?.text ?? "Hey! I'm your personal doctor. What's going on?"
         await playTTS(text)
     }
 
     func handleTap() {
         switch orbState {
-        case .idle:     Task { await requestAndStart() }
+        case .idle:      Task { await requestAndStart() }
         case .listening: Task { await stopAndProcess() }
-        case .speaking: stopPlayback()
-        case .thinking: break
+        case .speaking:  stopPlayback()
+        case .thinking:  break
         }
     }
 
     // MARK: - Recording
 
     private func requestAndStart() async {
-        let speechAuth = await withCheckedContinuation { cont in
-            SFSpeechRecognizer.requestAuthorization { cont.resume(returning: $0) }
-        }
-        guard speechAuth == .authorized else {
-            errorText = "Speech recognition not authorized in Settings."
-            return
-        }
         #if os(macOS)
-        let micGranted = await withCheckedContinuation { cont in
+        let granted = await withCheckedContinuation { cont in
             AVCaptureDevice.requestAccess(for: .audio) { cont.resume(returning: $0) }
         }
         #else
-        let micGranted = await AVAudioApplication.requestRecordPermission()
+        let granted = await AVAudioApplication.requestRecordPermission()
         #endif
-        guard micGranted else {
+        guard granted else {
             errorText = "Microphone access denied — allow it in Settings."
             return
         }
@@ -68,38 +57,28 @@ final class VoiceOrbModel {
     }
 
     private func startRecording() {
-        // Fresh engine each session — avoids stale input node format (sampleRate = 0 crash)
         audioEngine = AVAudioEngine()
-        recognitionTask?.cancel()
-        recognitionTask = nil
-        partialTranscript = ""
-
-        let req = SFSpeechAudioBufferRecognitionRequest()
-        req.shouldReportPartialResults = true
-        recognitionRequest = req
-
-        recognitionTask = speechRecognizer?.recognitionTask(with: req) { [weak self] result, error in
-            Task { @MainActor [weak self] in
-                if let r = result {
-                    self?.partialTranscript = r.bestTranscription.formattedString
-                }
-                if let e = error, (e as NSError).code != 216 { // 216 = cancelled
-                    self?.orbState = .idle
-                    self?.statusText = "tap to speak"
-                }
-            }
-        }
 
         let inputNode = audioEngine.inputNode
-
-        // Validate format — sampleRate can be 0 before the engine warms up
         var format = inputNode.outputFormat(forBus: 0)
         if format.sampleRate == 0 || format.channelCount == 0 {
-            format = AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1)!
+            format = AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1)!
         }
 
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { buf, _ in
-            req.append(buf)
+        let tmpURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("wav")
+        recordingURL = tmpURL
+
+        do {
+            audioFile = try AVAudioFile(forWriting: tmpURL, settings: format.settings)
+        } catch {
+            errorText = "Could not create audio file."
+            return
+        }
+
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buf, _ in
+            try? self?.audioFile?.write(from: buf)
         }
 
         do {
@@ -115,15 +94,32 @@ final class VoiceOrbModel {
     }
 
     private func stopAndProcess() async {
-        let text = partialTranscript
-        cleanupEngine()
+        let url = recordingURL
+        recordingURL = nil
+        cleanupEngine()   // stop engine + remove tap (no more writes)
+        audioFile = nil   // flush + close the file
 
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            orbState = .idle
-            statusText = "nothing heard — tap to try again"
-            return
+        guard let url else {
+            orbState = .idle; statusText = "tap to speak"; return
         }
+
+        orbState = .thinking
+        statusText = "transcribing…"
+
+        let data = (try? Data(contentsOf: url)) ?? Data()
+        try? FileManager.default.removeItem(at: url)
+
+        guard !data.isEmpty else {
+            orbState = .idle; statusText = "nothing heard — tap to try again"; return
+        }
+
+        let transcript = await backendService.speechToText(audioData: data) ?? ""
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmed.isEmpty else {
+            orbState = .idle; statusText = "nothing heard — tap to try again"; return
+        }
+
         await processText(trimmed)
     }
 
@@ -131,10 +127,6 @@ final class VoiceOrbModel {
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
         audioEngine.reset()
-        recognitionRequest?.endAudio()
-        recognitionTask?.cancel()
-        recognitionRequest = nil
-        recognitionTask = nil
     }
 
     // MARK: - LLM
@@ -145,9 +137,9 @@ final class VoiceOrbModel {
         statusText = "thinking…"
 
         let beforeCount = model.messages.count
-        model.sendUserMessage(text) // fires Task internally; user msg appended synchronously
+        model.sendUserMessage(text)
 
-        // Wait for the assistant response (max 30 s, poll every 200 ms)
+        // Poll for assistant reply (max 30 s)
         var waited = 0
         while model.messages.count < beforeCount + 2, waited < 30_000 {
             try? await Task.sleep(for: .milliseconds(200))
@@ -168,15 +160,22 @@ final class VoiceOrbModel {
     private func playTTS(_ text: String) async {
         orbState = .speaking
         statusText = "speaking…"
+        errorText = nil
 
         if let data = await backendService.requestTTS(text: String(text.prefix(500))) {
             do {
                 audioPlayer = try AVAudioPlayer(data: data)
+                audioPlayer?.volume = 1.0
+                audioPlayer?.prepareToPlay()
                 audioPlayer?.play()
                 while audioPlayer?.isPlaying == true {
                     try? await Task.sleep(for: .milliseconds(100))
                 }
-            } catch {}
+            } catch {
+                errorText = "Playback error: \(error.localizedDescription)"
+            }
+        } else {
+            errorText = "TTS failed — is the backend running at port 8000?"
         }
 
         orbState = .idle

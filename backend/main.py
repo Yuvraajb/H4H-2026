@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -85,7 +85,9 @@ async def chat(req: ChatRequest):
 
     session = session_manager.get_session(session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+        # Session lost (e.g. backend restarted with in-memory store). Start fresh so client gets 200 instead of 404.
+        session_id = session_manager.create_session()
+        session = session_manager.get_session(session_id)
 
     session_manager.append_message(session_id, "user", message)
 
@@ -136,6 +138,22 @@ async def _tts_response(text: str):
         return Response(content=data, media_type=content_type)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"TTS error: {str(e)}")
+
+
+# --- STT endpoint (ElevenLabs proxy) ---
+
+@app.post("/api/stt")
+async def speech_to_text(request: Request):
+    audio_data = await request.body()
+    if not audio_data:
+        raise HTTPException(status_code=400, detail="No audio data")
+    content_type = request.headers.get("content-type", "audio/wav")
+    from services.stt_service import transcribe_audio
+    try:
+        text = await transcribe_audio(audio_data, content_type)
+        return {"text": text}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"STT error: {str(e)}")
 
 
 # --- Report endpoint ---

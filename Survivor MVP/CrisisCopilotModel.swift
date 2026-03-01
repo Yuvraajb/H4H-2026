@@ -65,6 +65,8 @@ class CrisisCopilotModel {
     /// Set from ContentView so each user message can attach a camera frame.
     weak var cameraModel: CameraFeedModel?
 
+    /// Set from ContentView — provides real-time body landmark context to the AI.
+    weak var poseDetector: BodyPoseDetector?
     private let wrapUp = "Session resolved. Stay calm — you've done great. Start a new session if anything changes."
 
     private var sessionId: String?
@@ -121,9 +123,15 @@ class CrisisCopilotModel {
         // Capture camera frame to attach as visual context
         let imageData = cameraModel?.captureFrame()
 
+        // Append detected body landmarks as extra context for the AI
+        var messageText = t
+        if let poseSummary = poseDetector?.landmarkSummary {
+            messageText += "\n[Vision detection: \(poseSummary)]"
+        }
+
         Task { @MainActor in
             defer { isProcessing = false }
-            let result = await backendService.sendMessage(sessionId: sessionId, text: t, imageData: imageData)
+            let result = await backendService.sendMessage(sessionId: sessionId, text: messageText, imageData: imageData)
             if let result {
                 sessionId = result.sessionId
 

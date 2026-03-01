@@ -33,6 +33,9 @@ async def lifespan(app: FastAPI):
     groq_ok = bool(os.getenv("GROQ_API_KEY"))
     eleven_ok = bool(os.getenv("ELEVENLABS_API_KEY"))
     print(f"[Personal Doctor] LLM={provider} groq={groq_ok} elevenlabs={eleven_ok}")
+    # Pre-populate wikiHow image cache in the background so first requests are instant
+    from services.wikihow_service import warmup as wikihow_warmup
+    asyncio.create_task(wikihow_warmup())
     yield
 
 
@@ -126,16 +129,36 @@ async def chat(req: ChatRequest):
     if metadata:
         session_manager.append_metadata(session_id, metadata)
 
-    # Fetch Wikipedia images for each step concurrently
+    # Fetch wikiHow steps for each unique image_query and expand into full how-to steps
     steps: list[dict] = []
     if steps_raw:
-        from services.image_service import get_image_url
-        queries = [s.get("image_query", "") for s in steps_raw]
-        image_urls = await asyncio.gather(*[get_image_url(q) for q in queries])
-        steps = [
-            {"instruction": s.get("instruction", ""), "image_url": url}
-            for s, url in zip(steps_raw, image_urls)
-        ]
+        from services.wikihow_service import get_wikihow_steps
+        from services.image_service import derive_image_query_from_instruction
+
+        # Collect unique queries while preserving order
+        seen_q: set[str] = set()
+        unique_queries: list[str] = []
+        for s in steps_raw:
+            q = (s.get("image_query") or "").strip()
+            if not q:
+                q = derive_image_query_from_instruction(s.get("instruction", ""))
+            if q.lower() not in seen_q:
+                seen_q.add(q.lower())
+                unique_queries.append(q)
+
+        # Fetch wikiHow steps for each unique topic concurrently
+        results = await asyncio.gather(*[get_wikihow_steps(q) for q in unique_queries])
+
+        for q, wikihow_steps in zip(unique_queries, results):
+            if wikihow_steps:
+                steps.extend(wikihow_steps)
+            else:
+                # Fall back to the LLM instruction with no image
+                for s in steps_raw:
+                    raw_q = (s.get("image_query") or derive_image_query_from_instruction(s.get("instruction", ""))).strip()
+                    if raw_q.lower() == q.lower():
+                        steps.append({"instruction": s.get("instruction", ""), "image_url": None})
+                        break
 
     return ChatResponse(
         response={

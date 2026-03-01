@@ -29,8 +29,6 @@ final class CameraFeedModel: NSObject {
     var status: Status = .idle
     var session: AVCaptureSession?
 
-    private var latestPixelBuffer: CVPixelBuffer?
-
     // MARK: - Session control
 
     func start() {
@@ -56,7 +54,7 @@ final class CameraFeedModel: NSObject {
         let sessionToStop = session
         session = nil
         status = .idle
-        latestPixelBuffer = nil
+        cameraFeedLatestBufferClear()
         sessionQueue.async { sessionToStop?.stopRunning() }
     }
 
@@ -64,7 +62,7 @@ final class CameraFeedModel: NSObject {
 
     /// Captures the most recent camera frame as a JPEG (≈100 KB). Returns nil if camera not running.
     func captureFrame() -> Data? {
-        guard let pb = latestPixelBuffer else { return nil }
+        guard let pb = cameraFeedLatestBufferGet() else { return nil }
         #if os(macOS)
         let ci = CIImage(cvPixelBuffer: pb)
         guard let cg = CIContext().createCGImage(ci, from: ci.extent) else { return nil }
@@ -80,9 +78,15 @@ final class CameraFeedModel: NSObject {
     // MARK: - Private
 
     private func configureAndStartSession() {
-        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
+        #if os(macOS)
+        // macOS: use default video device (e.g. FaceTime HD); no front/back
+        let device = AVCaptureDevice.default(for: .video)
+        #else
+        let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
             ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
-            ?? AVCaptureDevice.default(for: .video) else {
+            ?? AVCaptureDevice.default(for: .video)
+        #endif
+        guard let device else {
             status = .unavailable
             return
         }
@@ -128,10 +132,31 @@ extension CameraFeedModel: AVCaptureVideoDataOutputSampleBufferDelegate {
         from connection: AVCaptureConnection
     ) {
         guard let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        // Store on main actor — dispatch to avoid crossing isolation boundary directly
-        let retained = pb
-        Task { @MainActor [weak self] in self?.latestPixelBuffer = retained }
+        cameraFeedLatestBufferSet(pb)
     }
+}
+
+// MARK: - File-private buffer storage (delegate and main actor; no actor isolation)
+
+private let _cameraFeedBufferLock = NSLock()
+private var _cameraFeedLatestBuffer: CVPixelBuffer?
+
+private func cameraFeedLatestBufferSet(_ pb: CVPixelBuffer?) {
+    _cameraFeedBufferLock.lock()
+    _cameraFeedLatestBuffer = pb
+    _cameraFeedBufferLock.unlock()
+}
+
+private func cameraFeedLatestBufferGet() -> CVPixelBuffer? {
+    _cameraFeedBufferLock.lock()
+    defer { _cameraFeedBufferLock.unlock() }
+    return _cameraFeedLatestBuffer
+}
+
+private func cameraFeedLatestBufferClear() {
+    _cameraFeedBufferLock.lock()
+    _cameraFeedLatestBuffer = nil
+    _cameraFeedBufferLock.unlock()
 }
 
 // MARK: - NSImage JPEG helper

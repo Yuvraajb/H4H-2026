@@ -9,7 +9,7 @@ final class VoiceOrbModel {
     enum OrbState { case idle, listening, thinking, speaking }
 
     var orbState: OrbState = .idle
-    var statusText = "tap to speak"
+    var statusText = "Tap orb to speak"
     var errorText: String? = nil
 
     weak var copilotModel: CrisisCopilotModel?
@@ -21,6 +21,17 @@ final class VoiceOrbModel {
     private let backendService = BackendService()
 
     // MARK: - Public
+
+    /// Request microphone permission early so the user sees the prompt on launch (call from onAppear).
+    func requestMicrophonePermissionIfNeeded() {
+        #if os(macOS)
+        guard AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined else { return }
+        AVCaptureDevice.requestAccess(for: .audio) { _ in }
+        #else
+        guard AVAudioApplication.recordPermission == .undetermined else { return }
+        AVAudioApplication.requestRecordPermission { _ in }
+        #endif
+    }
 
     /// Called once on launch — speaks the opening greeting and initialises the session.
     func autoGreet() async {
@@ -85,7 +96,7 @@ final class VoiceOrbModel {
             audioEngine.prepare()
             try audioEngine.start()
             orbState = .listening
-            statusText = "listening… tap to stop"
+            statusText = "Listening… tap again when done"
             errorText = nil
         } catch {
             errorText = "Could not start microphone."
@@ -100,7 +111,7 @@ final class VoiceOrbModel {
         audioFile = nil   // flush + close the file
 
         guard let url else {
-            orbState = .idle; statusText = "tap to speak"; return
+            orbState = .idle; statusText = "Tap orb to speak"; return
         }
 
         orbState = .thinking
@@ -149,7 +160,7 @@ final class VoiceOrbModel {
         let reply = model.messages.last(where: { $0.role == .assistant })?.text ?? ""
         if reply.isEmpty {
             orbState = .idle
-            statusText = "tap to speak"
+            statusText = "Tap orb to speak"
         } else {
             await playTTS(reply)
         }
@@ -179,13 +190,13 @@ final class VoiceOrbModel {
         }
 
         orbState = .idle
-        statusText = "tap to speak"
+        statusText = "Tap orb to speak"
     }
 
     private func stopPlayback() {
         audioPlayer?.stop()
         audioPlayer = nil
         orbState = .idle
-        statusText = "tap to speak"
+        statusText = "Tap orb to speak"
     }
 }

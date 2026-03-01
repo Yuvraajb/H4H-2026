@@ -33,11 +33,17 @@ struct ContentView: View {
         .frame(minWidth: 760, minHeight: 520)
         .onAppear {
             cameraModel.start()
+            voiceOrbModel.requestMicrophonePermissionIfNeeded()
             voiceOrbModel.copilotModel = model
             model.cameraModel = cameraModel
             Task { await voiceOrbModel.autoGreet() }
         }
         .onDisappear { cameraModel.stop() }
+    }
+
+    /// Most recent assistant steps (drives the top-left overlay).
+    private var latestSteps: [ChatStep] {
+        model.messages.last(where: { $0.role == .assistant && !$0.steps.isEmpty })?.steps ?? []
     }
 
     @ViewBuilder
@@ -59,19 +65,27 @@ struct ContentView: View {
                 }
             }
 
-            // Camera toggle — top-left so it doesn't overlap the panel
-            VStack {
-                HStack {
-                    Toggle("", isOn: $cameraPreviewEnabled)
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                        .padding(10)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-                        .padding(12)
-                    Spacer()
+            // Top-left controls + step navigator overlay
+            VStack(alignment: .leading, spacing: 6) {
+                // Camera toggle
+                Toggle("", isOn: $cameraPreviewEnabled)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .padding(10)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+
+                // Step navigator — only visible when steps exist
+                if !latestSteps.isEmpty {
+                    StepNavigator(steps: latestSteps)
+                        .frame(maxWidth: 300)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .shadow(color: .black.opacity(0.30), radius: 14, x: 0, y: 4)
                 }
+
                 Spacer()
             }
+            .padding(12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .onChange(of: cameraPreviewEnabled) { _, enabled in
             if enabled { cameraModel.start() } else { cameraModel.stop() }
@@ -87,6 +101,19 @@ struct ContentView: View {
         case .running:              return ""
         case .failed(let msg):      return msg
         }
+    }
+}
+
+/// visionOS: glass; macOS: material background.
+struct PanelBackgroundModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        #if os(visionOS)
+        content
+            .glassBackgroundEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        #else
+        content
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        #endif
     }
 }
 
@@ -696,14 +723,10 @@ private struct TranscriptBubble: View {
                         .background(bubbleBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
 
-                // Treatment steps with Wikipedia images
+                // Treatment steps — navigable one-at-a-time card
                 if !message.steps.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(Array(message.steps.enumerated()), id: \.element.id) { idx, step in
-                            StepCard(number: idx + 1, step: step)
-                        }
-                    }
-                    .padding(.top, 4)
+                    StepNavigator(steps: message.steps)
+                        .padding(.top, 4)
                 }
 
                 Text(message.timestamp, style: .time)
@@ -719,6 +742,51 @@ private struct TranscriptBubble: View {
         message.role == .user
             ? AnyShapeStyle(Color.accentColor.opacity(0.22))
             : AnyShapeStyle(Color.primary.opacity(0.06))
+    }
+}
+
+private struct StepNavigator: View {
+    let steps: [ChatStep]
+    @State private var currentIndex: Int = 0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header: step counter + nav arrows
+            HStack {
+                Text("Step \(currentIndex + 1) of \(steps.count)")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                HStack(spacing: 4) {
+                    Button {
+                        if currentIndex > 0 { currentIndex -= 1 }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .imageScale(.small)
+                    }
+                    .disabled(currentIndex == 0)
+                    .buttonStyle(.plain)
+
+                    Button {
+                        if currentIndex < steps.count - 1 { currentIndex += 1 }
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .imageScale(.small)
+                    }
+                    .disabled(currentIndex == steps.count - 1)
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+
+            StepCard(number: currentIndex + 1, step: steps[currentIndex])
+        }
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .onChange(of: steps.count) { _, _ in
+            currentIndex = 0
+        }
     }
 }
 
@@ -753,7 +821,13 @@ private struct StepCard: View {
                             .frame(maxWidth: 240, maxHeight: 160)
                             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     case .failure:
-                        EmptyView()
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.primary.opacity(0.05))
+                            .frame(width: 240, height: 100)
+                            .overlay(
+                                Image(systemName: "photo")
+                                    .foregroundStyle(.secondary)
+                            )
                     case .empty:
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .fill(Color.primary.opacity(0.05))

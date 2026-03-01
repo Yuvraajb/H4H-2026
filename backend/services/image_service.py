@@ -3,6 +3,7 @@ Medical image lookup with curated Wikipedia article mapping.
 Uses exact article titles for known procedures (accurate results),
 falls back to Wikipedia search for unknown terms.
 """
+from __future__ import annotations
 import httpx
 import re
 
@@ -19,6 +20,9 @@ _ARTICLE_MAP: dict[str, str] = {
     "cpr": "Cardiopulmonary resuscitation",
     "chest compression": "Cardiopulmonary resuscitation",
     "chest compressions": "Cardiopulmonary resuscitation",
+    "hand on chest": "Cardiopulmonary resuscitation",
+    "center of chest": "Cardiopulmonary resuscitation",
+    "heel of hand": "Cardiopulmonary resuscitation",
     "cardiac arrest": "Cardiac arrest",
     "heart attack": "Myocardial infarction",
     "myocardial infarction": "Myocardial infarction",
@@ -26,7 +30,22 @@ _ARTICLE_MAP: dict[str, str] = {
     "defibrillator": "Automated external defibrillator",
     "automated external defibrillator": "Automated external defibrillator",
     "pulse check": "Pulse",
+    "check pulse": "Pulse",
+    "take pulse": "Pulse",
+    "feel pulse": "Pulse",
+    "check their pulse": "Pulse",
     "pulse": "Pulse",
+    # Breathing / Respiratory
+    "respiratory rate": "Respiratory rate",
+    "check respiratory rate": "Respiratory rate",
+    "count breaths": "Respiratory rate",
+    "count breathing": "Respiratory rate",
+    "breathing rate": "Respiratory rate",
+    "check breathing": "Breathing",
+    "check if they are breathing": "Breathing",
+    "look listen feel": "Breathing",
+    "rescue breath": "Rescue breathing",
+    "rescue breaths": "Rescue breathing",
     # Airway
     "rescue breathing": "Rescue breathing",
     "mouth to mouth": "Mouth-to-mouth resuscitation",
@@ -105,6 +124,19 @@ _ARTICLE_MAP: dict[str, str] = {
     "call 911": "Emergency telephone number",
     "911": "Emergency telephone number",
 }
+
+
+def derive_image_query_from_instruction(instruction: str) -> str:
+    """Derive a Wikipedia image search query from a step instruction when the LLM omits image_query."""
+    if not instruction or not instruction.strip():
+        return ""
+    text = instruction.strip()
+    article = _match_article(text)
+    if article:
+        return article
+    # Use first few words as search query (Wikipedia search will add "medical procedure first aid")
+    words = text.split()[:6]
+    return " ".join(words) if words else text
 
 
 def _match_article(query: str) -> str | None:

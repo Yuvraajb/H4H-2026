@@ -39,6 +39,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				"Survivor MVP Mac.entitlements",
 			);
 			target = 4AA7D2E32F4EAFBA00B4CEBC /* Survivor MVP Mac */;
 		};
@@ -215,6 +216,9 @@
 			);
 			mainGroup = 4AA7D2AE2F4EAFB900B4CEBC;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				4AA7D2BE2F4EAFB900B4CEBC /* RealityKitContent */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4AA7D2B82F4EAFB900B4CEBC /* Products */;
 			projectDirPath = "";
@@ -508,7 +512,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_ENTITLEMENTS = "Survivor MVP/Survivor MVP Mac.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -539,7 +543,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_ENTITLEMENTS = "Survivor MVP/Survivor MVP Mac.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -606,9 +610,17 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		4AA7D2BE2F4EAFB900B4CEBC /* RealityKitContent */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/RealityKitContent;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		4AA7D2BC2F4EAFB900B4CEBC /* RealityKitContent */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = 4AA7D2BE2F4EAFB900B4CEBC /* RealityKitContent */;
 			productName = RealityKitContent;
 		};
 /* End XCSwiftPackageProductDependency section */

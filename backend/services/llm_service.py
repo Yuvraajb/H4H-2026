@@ -19,11 +19,19 @@ CRITICAL RULES — non-negotiable:
 - If the situation is life-threatening, say so immediately and tell them to call 911 NOW before any other instruction.
 - Extract any vitals the user mentions (heart rate, breathing rate, SpO2, consciousness level, GCS).
 - Keep spoken_text under 35 words — it will be read aloud by TTS. Be calm, clear, direct.
+- spoken_text MUST be plain spoken words ONLY — absolutely NO markdown, NO numbered lists, NO bullet points, NO "##" headings, NO "Image references", NO "Step-by-step instructions". spoken_text is purely what the doctor says out loud.
+- Every instruction, numbered step, and image reference MUST go in the "steps" array — NEVER in spoken_text.
+
+STEPS WITH IMAGES — MANDATORY for any action you suggest:
+  Whenever you tell the user to DO something (check pulse, check breathing, count respiratory rate, apply pressure, do CPR, tilt head, etc.), you MUST include a "steps" array. Every actionable instruction gets its own step. Each step MUST have:
+  - "instruction": one clear imperative sentence (max 15 words), e.g. "Place two fingers on the wrist below the thumb to feel the pulse"
+  - "image_query": a Wikipedia article title or medical term so we can show a step-by-step image. Use exact titles when possible: "Pulse", "Respiratory rate", "Cardiopulmonary resuscitation", "Head-tilt/chin-lift", "Recovery position", "Abdominal thrusts", "Tourniquet", "Bleeding", "Recovery position"
+  This applies in ALL phases: if you say "check their pulse" or "count their breaths per minute", you must output steps with instruction + image_query for each action so the app can show step-by-step images.
 
 THREE PHASES — execute in strict order:
 
 PHASE 1 — RAPID TRIAGE (turns 1-3 max):
-  Ask ONE high-yield clinical question per turn. Prioritize:
+  Ask ONE high-yield clinical question per turn. If you also suggest the user check something (e.g. "While I ask — check if they have a pulse"), include steps with instruction + image_query for that check.
   Turn 1: Chief complaint + mechanism of injury/onset ("What exactly happened and when did it start?")
   Turn 2: Severity + key associated symptoms ("Rate the pain 1-10. Any difficulty breathing, chest pain, or loss of consciousness?")
   Turn 3: Medical history + allergies ("Any relevant medical conditions, medications, or allergies I should know about?")
@@ -33,6 +41,7 @@ PHASE 1 — RAPID TRIAGE (turns 1-3 max):
 PHASE 2 — CLINICAL ASSESSMENT:
   Summarize your findings. Commit to a working diagnosis with confidence percentage.
   State urgency level clearly. List 2-3 clinical findings that support the diagnosis.
+  If you ask the user to check vitals (pulse, breathing, etc.), include steps with instruction + image_query for each check.
   If call_emergency = true, say "Call 911 immediately" as the FIRST sentence of spoken_text.
   Extract any vitals mentioned by the user (HR, RR, SpO2, GCS, temperature).
 
@@ -42,7 +51,7 @@ PHASE 3 — TREATMENT PROTOCOL:
   - Clinically specific (include timing, depth, rate, position where relevant)
   - Paired with an image_query that is the EXACT Wikipedia article title or a very specific anatomical term
   Maximum 8 steps. Final step: ask "What are you seeing now?"
-  Good image_query examples: "Cardiopulmonary resuscitation", "Recovery position", "Abdominal thrusts", "Tourniquet", "Automated external defibrillator"
+  Good image_query examples: "Cardiopulmonary resuscitation", "Recovery position", "Abdominal thrusts", "Tourniquet", "Pulse", "Respiratory rate", "Head-tilt/chin-lift", "Automated external defibrillator"
 
 RESPONSE FORMAT — strict JSON, no markdown, no text outside JSON:
 {
@@ -83,6 +92,12 @@ Treatment phase example:
 
 Vitals extraction example (if user says "his pulse is 120 and he's barely breathing"):
 "vitals": {"hr": 120, "rr": 4, "gcs": 10}
+
+When you ask the user to check something, always include steps so they see step-by-step images:
+Example — you say "First check their pulse":
+"steps": [{"instruction": "Place two fingers on the inner wrist below the thumb", "image_query": "Pulse"}, {"instruction": "Count the beats for 15 seconds and multiply by 4", "image_query": "Pulse"}]
+Example — you say "Count their breaths per minute":
+"steps": [{"instruction": "Watch their chest rise and fall for 30 seconds", "image_query": "Respiratory rate"}, {"instruction": "Count each breath (in + out = 1). Multiply by 2 for breaths per minute", "image_query": "Respiratory rate"}]
 
 Valid vitals keys: hr (heart rate bpm), rr (respiratory rate /min), spo2 (SpO2 %), gcs (Glasgow Coma Scale 3-15), sbp (systolic BP mmHg), temp (temperature °C)
 """
@@ -185,17 +200,87 @@ async def _get_response_groq(
             raise RuntimeError(f"Groq API error: {e!s}")
 
 
+def _sanitize_spoken_text(result: dict[str, Any]) -> dict[str, Any]:
+    """
+    Fix cases where the LLM puts markdown / numbered steps inside spoken_text
+    instead of the steps array.  Extracts a clean spoken sentence and recovers
+    any embedded instructions into the steps array.
+    """
+    spoken: str = result.get("spoken_text", "")
+
+    # Markers that indicate the model leaked structured content into spoken_text
+    _MARKDOWN_MARKERS = ("##", "**", "- \"", "Image reference", "Step-by-step", "step-by-step")
+    _NUMBERED_LINE = re.compile(r"^\s*\d+\.\s+\S")
+
+    has_markdown = any(m in spoken for m in _MARKDOWN_MARKERS) or bool(
+        _NUMBERED_LINE.search(spoken)
+    )
+    if not has_markdown:
+        return result
+
+    lines = spoken.splitlines()
+
+    # First non-empty, non-markdown line becomes the spoken text
+    clean_spoken = ""
+    for line in lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and not stripped.startswith("-"):
+            # Stop at the first numbered item or section header
+            if _NUMBERED_LINE.match(stripped):
+                break
+            clean_spoken = stripped
+            break
+
+    # Limit to 35 words
+    words = clean_spoken.split()
+    result["spoken_text"] = " ".join(words[:35])
+
+    # If steps are missing, try to recover them from the numbered list in spoken_text
+    if not result.get("steps"):
+        extracted: list[dict[str, Any]] = []
+
+        # Collect image queries from "Image references" section
+        image_queries: list[str] = []
+        in_images = False
+        for line in lines:
+            stripped = line.strip()
+            if "image reference" in stripped.lower():
+                in_images = True
+                continue
+            if in_images:
+                m = re.match(r'^[-•]\s*"?([^"]+)"?', stripped)
+                if m:
+                    image_queries.append(m.group(1).strip())
+                elif stripped.startswith("#") or not stripped:
+                    in_images = False
+
+        # Extract numbered steps
+        for line in lines:
+            m = _NUMBERED_LINE.match(line)
+            if m:
+                instruction = re.sub(r"^\s*\d+\.\s+", "", line).strip()
+                idx = len(extracted)
+                image_query = image_queries[idx] if idx < len(image_queries) else ""
+                extracted.append({"instruction": instruction, "image_query": image_query})
+
+        if extracted:
+            result["steps"] = extracted
+
+    return result
+
+
 def _parse_groq_response(resp: Any) -> dict[str, Any]:
     content = resp.choices[0].message.content or ""
     parsed = _parse_llm_json(content)
     if parsed and "spoken_text" in parsed:
-        return {
+        result = {
             "spoken_text": parsed.get("spoken_text", ""),
             "phase": parsed.get("phase", "questioning"),
             "steps": parsed.get("steps") or [],
             "vitals": parsed.get("vitals") or {},
             "metadata": parsed.get("metadata") or _default_metadata(),
         }
+        return _sanitize_spoken_text(result)
     return {
         "spoken_text": content[:300] if content else "I'm here. Tell me what's happening.",
         "phase": "questioning",

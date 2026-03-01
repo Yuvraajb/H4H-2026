@@ -373,7 +373,7 @@ private struct EmergencyBanner: View {
                 .tracking(1.5)
             Spacer()
             // Tappable on macOS — opens dialer on iOS/visionOS
-            Link("📞 911", destination: URL(string: "tel:911")!)
+            Link("📞 Call", destination: URL(string: "tel:6696679710")!)
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 10)

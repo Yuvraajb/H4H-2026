@@ -27,10 +27,17 @@ enum InputMode: String, CaseIterable {
 }
 
 struct ChatMessage: Identifiable {
-    let id = UUID()
+    let id: UUID
     let role: ChatRole
-    let text: String
+    var text: String
     let timestamp: Date
+
+    init(id: UUID? = nil, role: ChatRole, text: String, timestamp: Date = Date()) {
+        self.id = id ?? UUID()
+        self.role = role
+        self.text = text
+        self.timestamp = timestamp
+    }
 
     enum ChatRole {
         case user
@@ -49,33 +56,63 @@ class CrisisCopilotModel {
     var draftText: String = ""
     var suggestedActions: [String] = []
 
+    // Voice + vision settings
+    var audioOutEnabled: Bool
+    var visionEnabled: Bool = true
+    var handsFreePTT: Bool = false
+    var elevenLabsVoiceId: String = ""
+
+    // Listening / speaking state
+    var isListening: Bool = false
+    var liveTranscript: String { stt.partialTranscript }
+    var isThinking: Bool = false
+    var isSpeaking: Bool { tts.isSpeaking }
+
+    // Banners (permission / errors)
+    var bannerMessage: String?
+    var bannerStyle: BannerView.BannerStyle = .info
+
+    // Services (injectable; default to real implementations)
+    var reasoner: GroqReasoner
+    var tts: ElevenLabsTTSService
+    var stt: AppleSpeechTranscriber
+
     private let greeting = "I'm Crisis Copilot. Tell me what's happening. If this is life-threatening, call emergency services now."
     private let wrapUp = "Session marked resolved. If you need to report again, start a new emergency."
+    private static let thinkingPlaceholderText = "Thinking…"
 
-    private var sessionId: String?
-    private let backendService = BackendService()
+    init(
+        reasoner: GroqReasoner? = nil,
+        tts: ElevenLabsTTSService? = nil,
+        stt: AppleSpeechTranscriber? = nil
+    ) {
+        let ttsService = tts ?? ElevenLabsTTSService()
+        self.reasoner = reasoner ?? GroqReasoner(backend: BackendService())
+        self.tts = ttsService
+        self.stt = stt ?? AppleSpeechTranscriber()
+        self.audioOutEnabled = ttsService.isConfigured
+        if !ttsService.isConfigured {
+            self.bannerMessage = "Set ELEVENLABS_API_KEY to enable TTS"
+            self.bannerStyle = .warning
+        }
+    }
 
     func startEmergency() {
         state = .active
         messages = []
-        sessionId = nil
+        reasoner.resetSession()
         suggestedActions = Self.suggestedActions(for: scenario)
         messages.append(ChatMessage(role: .assistant, text: greeting, timestamp: Date()))
-
-        Task { @MainActor in
-            if let result = await backendService.startSession() {
-                sessionId = result.sessionId
-            }
-        }
     }
+
+    private let backendService = BackendService()
 
     func markResolved() {
         state = .resolved
         messages.append(ChatMessage(role: .assistant, text: wrapUp, timestamp: Date()))
-        if let sid = sessionId {
+        if let sid = reasoner.sessionId {
             Task { @MainActor in
                 _ = await backendService.generateReport(sessionId: sid)
-                // Optionally save or show report; for now we just trigger generation
             }
         }
     }
@@ -85,10 +122,17 @@ class CrisisCopilotModel {
         messages = []
         draftText = ""
         suggestedActions = []
-        sessionId = nil
+        reasoner.resetSession()
     }
 
-    func sendUserMessage(_ text: String) {
+    func sendUserMessage(_ text: String, imageData: Data? = nil, userVisible: Bool? = nil) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        let imageBase64 = imageData.map { $0.base64EncodedString() }
+        sendToLLM(text: t, imageBase64: imageBase64)
+    }
+
+    func sendToLLM(text: String, imageBase64: String? = nil) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
         if state == .idle {
@@ -97,17 +141,78 @@ class CrisisCopilotModel {
         }
         messages.append(ChatMessage(role: .user, text: t, timestamp: Date()))
         draftText = ""
-
+        let thinkingId = UUID()
+        messages.append(ChatMessage(id: thinkingId, role: .assistant, text: Self.thinkingPlaceholderText, timestamp: Date()))
+        isThinking = true
         Task { @MainActor in
-            let result = await backendService.sendMessage(sessionId: sessionId, text: t)
-            if let result {
-                sessionId = result.sessionId
-                messages.append(ChatMessage(role: .assistant, text: result.responseText, timestamp: Date()))
-            } else {
-                let fallback = stubResponse(for: scenario)
-                let withHint = fallback + "\n\n(Backend unreachable. Start it: cd backend && python3 run.py. On a physical device? Set BackendService.deviceBaseURLOverride to your Mac’s IP, e.g. \"http://192.168.1.x:8000\".)"
-                messages.append(ChatMessage(role: .assistant, text: withHint, timestamp: Date()))
+            defer { isThinking = false }
+            let conversation = messages.dropLast().map { msg in
+                ReasonerMessage(role: msg.role == .user ? "user" : "assistant", text: msg.text)
             }
+            do {
+                let responseText = try await reasoner.respond(systemPrompt: "", conversation: conversation + [ReasonerMessage(role: "user", text: t)], imageBase64JPEG: imageBase64)
+                if let idx = messages.firstIndex(where: { $0.id == thinkingId }) {
+                    messages[idx].text = responseText
+                }
+                if audioOutEnabled {
+                    try? await tts.speak(responseText)
+                }
+            } catch {
+                let fallback = stubResponse(for: scenario)
+                if let idx = messages.firstIndex(where: { $0.id == thinkingId }) {
+                    messages[idx].text = fallback + " (Error: \(error.localizedDescription))"
+                }
+            }
+        }
+    }
+
+    func startListening() {
+        guard !isListening else { return }
+        Task { @MainActor in
+            let speechOK = await AppleSpeechTranscriber.requestAuthorization()
+            guard speechOK else {
+                bannerMessage = "Speech recognition denied. Enable in System Settings → Privacy & Security → Speech Recognition."
+                bannerStyle = .warning
+                return
+            }
+            let micOK = await AppleSpeechTranscriber.microphonePermissionGranted()
+            guard micOK else {
+                bannerMessage = "Microphone access denied. Enable in System Settings → Privacy & Security → Microphone."
+                bannerStyle = .warning
+                return
+            }
+            bannerMessage = nil
+            stt.start()
+            isListening = true
+        }
+    }
+
+    func stopListeningAndSend() {
+        guard isListening else { return }
+        isListening = false
+        Task { @MainActor in
+            do {
+                let transcript = try await stt.stop()
+                let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { sendToLLM(text: trimmed, imageBase64: nil) }
+            } catch {
+                bannerMessage = "Speech recognition failed: \(error.localizedDescription)"
+                bannerStyle = .error
+            }
+        }
+    }
+
+    func toggleListening() {
+        if isListening { stopListeningAndSend() }
+        else { startListening() }
+    }
+
+    func analyzeScene(imageBase64: String?) {
+        let prompt = "Analyze the scene and give the next best step for the responder. Keep it short."
+        if let img = imageBase64 {
+            sendToLLM(text: prompt, imageBase64: img)
+        } else {
+            sendToLLM(text: "(I captured an image but your model may not support vision. Give generic guidance anyway.) " + prompt, imageBase64: nil)
         }
     }
 

@@ -217,3 +217,124 @@ def _default_metadata() -> dict[str, Any]:
         "category": "other",
         "display_text": "Continue as needed.",
     }
+
+
+VISION_SYSTEM_PROMPT = SYSTEM_PROMPT + """
+
+When the user sends an image, you can see what is in the camera frame. Use it to acknowledge what you see (e.g. "I can see you", "I see the room") and to inform your guidance. Keep the same short, actionable response format and JSON output.
+"""
+
+
+async def get_response_with_vision(messages: list[dict[str, Any]], image_bytes: bytes) -> dict[str, Any]:
+    """
+    Call vision-capable LLM with the conversation history and the attached image.
+    Returns same shape as get_response: { spoken_text, metadata }.
+    """
+    import base64
+    provider = os.getenv("LLM_PROVIDER", "groq").lower()
+    if provider == "groq":
+        return await _get_response_groq_vision(messages, image_bytes)
+    if provider == "gemini":
+        return await _get_response_gemini_vision(messages, image_bytes)
+    # Fallback: try Groq vision if we have the key
+    if os.getenv("GROQ_API_KEY"):
+        return await _get_response_groq_vision(messages, image_bytes)
+    return {
+        "spoken_text": "Vision not configured. Set GROQ_API_KEY or GEMINI_API_KEY for image support.",
+        "metadata": _default_metadata(),
+    }
+
+
+async def _get_response_groq_vision(messages: list[dict[str, str]], image_bytes: bytes) -> dict[str, Any]:
+    """Groq vision via OpenAI-compatible API with image_url content."""
+    from openai import AsyncOpenAI
+    import base64
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        return {"spoken_text": "Configure GROQ_API_KEY.", "metadata": _default_metadata()}
+    model = os.getenv("GROQ_VISION_MODEL", "llama-4-scout-17b-16e-instruct")
+    b64 = base64.b64encode(image_bytes).decode("ascii")
+    # Build message list: system + conversation. Last user message gets the image.
+    full = [{"role": "system", "content": VISION_SYSTEM_PROMPT}]
+    for i, m in enumerate(messages):
+        role = m.get("role", "user")
+        content = m.get("content", "")
+        if role == "user" and i == len(messages) - 1 and content:
+            full.append({
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": content},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+                ],
+            })
+        else:
+            full.append({"role": role, "content": content})
+    client = AsyncOpenAI(base_url="https://api.groq.com/openai/v1", api_key=api_key)
+    try:
+        resp = await client.chat.completions.create(
+            model=model,
+            messages=full,
+            max_tokens=500,
+            temperature=0.3,
+        )
+        content = resp.choices[0].message.content or ""
+    except Exception as e:
+        raise RuntimeError(f"Groq vision API error: {e!s}")
+    parsed = _parse_llm_json(content)
+    if parsed and "spoken_text" in parsed:
+        return {
+            "spoken_text": parsed.get("spoken_text", ""),
+            "metadata": parsed.get("metadata") or _default_metadata(),
+        }
+    return {
+        "spoken_text": content[:500] if content else "I'm here. What's happening now?",
+        "metadata": _default_metadata(),
+    }
+
+
+async def _get_response_gemini_vision(messages: list[dict[str, str]], image_bytes: bytes) -> dict[str, Any]:
+    """Gemini with inline image data."""
+    import base64
+    import httpx
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return {"spoken_text": "Configure GEMINI_API_KEY.", "metadata": _default_metadata()}
+    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    b64 = base64.b64encode(image_bytes).decode("ascii")
+    prompt_parts = [VISION_SYSTEM_PROMPT + "\n\nConversation:\n"]
+    for m in messages:
+        role = m.get("role", "user")
+        content = m.get("content", "")
+        prompt_parts.append(f"{role.upper()}: {content}\n")
+    prompt_parts.append("ASSISTANT: ")
+    prompt_text = "".join(prompt_parts)
+    content_parts = [{"text": prompt_text}, {"inline_data": {"mime_type": "image/jpeg", "data": b64}}]
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    payload = {
+        "contents": [{"parts": content_parts}],
+        "generationConfig": {"maxOutputTokens": 500, "temperature": 0.3},
+    }
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(url, json=payload)
+        if resp.status_code != 200:
+            try:
+                err = resp.json()
+                msg = err.get("error", {}).get("message", resp.text[:200])
+            except Exception:
+                msg = resp.text[:200] if resp.text else f"HTTP {resp.status_code}"
+            raise RuntimeError(f"Gemini vision API error: {msg}")
+        data = resp.json()
+    text = ""
+    for c in data.get("candidates", []):
+        for p in c.get("content", {}).get("parts", []):
+            text += p.get("text", "")
+    parsed = _parse_llm_json(text)
+    if parsed and "spoken_text" in parsed:
+        return {
+            "spoken_text": parsed.get("spoken_text", ""),
+            "metadata": parsed.get("metadata") or _default_metadata(),
+        }
+    return {
+        "spoken_text": text[:500] if text else "I'm here. What's happening now?",
+        "metadata": _default_metadata(),
+    }

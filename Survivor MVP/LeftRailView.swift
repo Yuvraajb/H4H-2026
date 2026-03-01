@@ -17,8 +17,39 @@ struct CrisisCopilotPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Compact header only — nothing fixed in the chat area below
+            if let msg = model.bannerMessage, !msg.isEmpty {
+                BannerView(message: msg, style: model.bannerStyle)
+                    .padding(.bottom, 6)
+            }
             panelHeader
+
+            if model.isListening {
+                HStack(spacing: 6) {
+                    ProgressView().scaleEffect(0.8)
+                    Text("Listening… \(model.liveTranscript)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.2), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .padding(.horizontal, 4)
+                .padding(.bottom, 4)
+            }
+            if model.isThinking || model.isSpeaking {
+                HStack(spacing: 6) {
+                    if model.isThinking { ProgressView().scaleEffect(0.8) }
+                    Text(model.isThinking ? "Thinking…" : "Speaking…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 4)
+            }
 
             // Chat area: only the conversation (no fixed content)
             ScrollViewReader { proxy in
@@ -68,6 +99,20 @@ struct CrisisCopilotPanelView: View {
                     .toggleStyle(.switch)
                     .labelsHidden()
             }
+            HStack(spacing: 16) {
+                Toggle("Audio out", isOn: Binding(get: { model.audioOutEnabled }, set: { model.audioOutEnabled = $0 }))
+                    .toggleStyle(.switch)
+                Toggle("Vision", isOn: Binding(get: { model.visionEnabled }, set: { model.visionEnabled = $0 }))
+                    .toggleStyle(.switch)
+                Toggle("Hands-free", isOn: Binding(get: { model.handsFreePTT }, set: { model.handsFreePTT = $0 }))
+                    .toggleStyle(.switch)
+            }
+            .font(.caption)
+            if cameraPreviewEnabled && cameraModel.status == .running {
+                Text(cameraModel.personDetected ? "I can see you" : "Move into frame")
+                    .font(.caption)
+                    .foregroundStyle(cameraModel.personDetected ? .secondary : .tertiary)
+            }
         }
         .padding(.bottom, 8)
     }
@@ -85,6 +130,15 @@ struct CrisisCopilotPanelView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.regular)
                 case .active:
+                    if model.visionEnabled {
+                        Button(action: {
+                            let base64 = cameraModel.captureJPEGBase64()
+                            model.analyzeScene(imageBase64: base64)
+                        }) {
+                            Label("Analyze what I see", systemImage: "camera.viewfinder")
+                        }
+                        .buttonStyle(.bordered)
+                    }
                     HStack(spacing: 8) {
                         Button("Simulate voice", action: { model.simulateVoiceInput() })
                             .buttonStyle(.bordered)
@@ -149,11 +203,13 @@ struct CrisisCopilotPanelView: View {
                 .focused($isComposerFocused)
                 .submitLabel(.send)
 
-            Button(action: { model.simulateVoiceInput() }) {
-                Image(systemName: "mic.fill")
-                    .font(.title2)
-            }
-            .buttonStyle(.plain)
+            PTTMicButton(
+                isListening: model.isListening,
+                handsFreeMode: model.handsFreePTT,
+                onPress: { model.startListening() },
+                onRelease: { model.stopListeningAndSend() },
+                onTap: { model.toggleListening() }
+            )
 
             Button(action: panelSendIfPossible) {
                 Image(systemName: "arrow.up.circle.fill")
@@ -169,7 +225,9 @@ struct CrisisCopilotPanelView: View {
     private func panelSendIfPossible() {
         let text = model.draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        model.sendUserMessage(text)
+        let imageData = cameraModel.captureCurrentFrame()
+        let userVisible = cameraModel.personDetected
+        model.sendUserMessage(text, imageData: imageData, userVisible: userVisible)
         model.draftText = ""
     }
 }

@@ -47,35 +47,42 @@ final class BackendService {
     }
 
     /// POST /api/chat — send user message, get AI response and session_id.
+    /// Optionally include image (base64) and user_visible for vision and context.
     /// Tries baseURL then fallback (localhost). Returns nil on any failure (network, decode, 4xx/5xx).
-    func sendMessage(sessionId: String?, text: String) async -> (responseText: String, metadata: ChatResponsePayload.MetadataPayload?, sessionId: String)? {
+    func sendMessage(sessionId: String?, text: String, imageBase64: String? = nil, userVisible: Bool? = nil) async -> (responseText: String, metadata: ChatResponsePayload.MetadataPayload?, sessionId: String)? {
         var urlsToTry = [baseURL, Self.fallbackBaseURLValue.trimmingCharacters(in: CharacterSet(charactersIn: "/"))]
         if let deviceURL = Self.deviceBaseURLOverride?.trimmingCharacters(in: CharacterSet(charactersIn: "/")), !urlsToTry.contains(deviceURL) {
             urlsToTry.append(deviceURL)
         }
         for base in urlsToTry {
-            if let result = await performChat(baseURL: base, sessionId: sessionId, text: text) {
+            if let result = await performChat(baseURL: base, sessionId: sessionId, text: text, imageBase64: imageBase64, userVisible: userVisible) {
                 return result
             }
         }
         return nil
     }
 
-    private func performChat(baseURL: String, sessionId: String?, text: String) async -> (responseText: String, metadata: ChatResponsePayload.MetadataPayload?, sessionId: String)? {
+    private func performChat(baseURL: String, sessionId: String?, text: String, imageBase64: String? = nil, userVisible: Bool? = nil) async -> (responseText: String, metadata: ChatResponsePayload.MetadataPayload?, sessionId: String)? {
         guard let url = URL(string: "\(baseURL)/api/chat") else { return nil }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        let body: [String: Any?] = [
+        var body: [String: Any?] = [
             "session_id": sessionId,
             "message": text,
         ]
+        if let imageBase64 = imageBase64 {
+            body["image_base64"] = imageBase64
+        }
+        if let userVisible = userVisible {
+            body["user_visible"] = userVisible
+        }
         let validBody = body.compactMapValues { $0 }
         guard let bodyData = try? JSONSerialization.data(withJSONObject: validBody) else { return nil }
         request.httpBody = bodyData
-        request.timeoutInterval = 30
+        request.timeoutInterval = 60
 
         do {
             let (data, response) = try await session.data(for: request)

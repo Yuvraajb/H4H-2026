@@ -51,6 +51,8 @@ app.add_middleware(
 class ChatRequest(BaseModel):
     session_id: Optional[str] = None
     message: str
+    image_base64: Optional[str] = None
+    user_visible: Optional[bool] = None
 
 
 class ChatResponse(BaseModel):
@@ -94,11 +96,28 @@ async def chat(req: ChatRequest):
         for m in session["messages"]
     ]
 
+    # Optional: add visibility context for the LLM when no image is sent
+    if req.user_visible is not None and not req.image_base64:
+        visibility_note = " (User is visible in camera frame.)" if req.user_visible else " (User not visible in frame.)"
+        if messages and messages[-1]["role"] == "user":
+            messages[-1] = {"role": "user", "content": messages[-1]["content"] + visibility_note}
+
     try:
-        result = await llm_service.get_response(messages)
+        if req.image_base64:
+            import base64
+            try:
+                image_bytes = base64.b64decode(req.image_base64)
+            except Exception:
+                image_bytes = None
+            if image_bytes:
+                result = await llm_service.get_response_with_vision(messages, image_bytes)
+            else:
+                result = await llm_service.get_response(messages)
+        else:
+            result = await llm_service.get_response(messages)
     except Exception as e:
         # Return 200 with error message so the app can show it (connection worked, LLM failed)
-        spoken = f"AI temporarily unavailable: {str(e)} Check GEMINI_API_KEY in backend/.env and that the backend is running."
+        spoken = f"AI temporarily unavailable: {str(e)} Check API keys in backend/.env and that the backend is running."
         metadata = {"step": 0, "urgency": "low", "image_query": None, "category": "other", "display_text": "Retry or check backend."}
         session_manager.append_message(session_id, "assistant", spoken)
         session_manager.append_metadata(session_id, metadata)

@@ -12,7 +12,9 @@ struct ContentView: View {
     @Environment(CrisisCopilotModel.self) private var model
     @State private var cameraModel = CameraFeedModel()
     @State private var voiceOrbModel = VoiceOrbModel()
+    @State private var poseDetector = BodyPoseDetector()
     @State private var cameraPreviewEnabled = true
+    @State private var showPoseOverlay = true
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -33,9 +35,11 @@ struct ContentView: View {
         .frame(minWidth: 760, minHeight: 520)
         .onAppear {
             cameraModel.start()
+            cameraModel.setPoseDetector(poseDetector)
             voiceOrbModel.requestMicrophonePermissionIfNeeded()
             voiceOrbModel.copilotModel = model
             model.cameraModel = cameraModel
+            model.poseDetector = poseDetector
             Task { await voiceOrbModel.autoGreet() }
         }
         .onDisappear { cameraModel.stop() }
@@ -52,8 +56,16 @@ struct ContentView: View {
             Color.black.ignoresSafeArea()
 
             if cameraPreviewEnabled, cameraModel.status == .running, let session = cameraModel.session {
-                CameraPreview(session: session)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ZStack {
+                    CameraPreview(session: session)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    // Body pose landmark overlay
+                    if showPoseOverlay {
+                        BodyPoseOverlayView(landmarks: poseDetector.detectedLandmarks)
+                            .allowsHitTesting(false)
+                    }
+                }
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "camera.viewfinder")
@@ -67,12 +79,33 @@ struct ContentView: View {
 
             // Top-left controls + step navigator overlay
             VStack(alignment: .leading, spacing: 6) {
-                // Camera toggle
-                Toggle("", isOn: $cameraPreviewEnabled)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                    .padding(10)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                // Camera + pose toggle controls
+                HStack(spacing: 8) {
+                    Toggle("", isOn: $cameraPreviewEnabled)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+
+                    if cameraPreviewEnabled {
+                        Toggle(isOn: $showPoseOverlay) {
+                            Image(systemName: "figure.stand")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .toggleStyle(.button)
+                        .controlSize(.small)
+                        .help("Toggle body detection overlay")
+                    }
+                }
+                .padding(10)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+
+                // Body detection status badge
+                if cameraPreviewEnabled && showPoseOverlay {
+                    PoseDetectionBadge(
+                        landmarkCount: poseDetector.detectedLandmarks.count,
+                        pulsePointCount: poseDetector.detectedLandmarks.filter { $0.category == .pulsePoint }.count,
+                        isDetecting: poseDetector.isDetecting
+                    )
+                }
 
                 // Step navigator — only visible when steps exist
                 if !latestSteps.isEmpty {

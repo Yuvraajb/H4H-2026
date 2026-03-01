@@ -29,6 +29,15 @@ final class CameraFeedModel: NSObject {
     var status: Status = .idle
     var session: AVCaptureSession?
 
+    /// Body pose detector — receives each camera frame for real-time landmark detection.
+    /// Use `setPoseDetector(_:)` to set this so the nonisolated delegate can access it.
+    private(set) weak var poseDetector: BodyPoseDetector?
+
+    func setPoseDetector(_ detector: BodyPoseDetector?) {
+        poseDetector = detector
+        cameraFeedStore.setDetector(detector)
+    }
+
     // MARK: - Session control
 
     func start() {
@@ -54,7 +63,7 @@ final class CameraFeedModel: NSObject {
         let sessionToStop = session
         session = nil
         status = .idle
-        cameraFeedLatestBufferClear()
+        cameraFeedStore.clearBuffer()
         sessionQueue.async { sessionToStop?.stopRunning() }
     }
 
@@ -62,7 +71,7 @@ final class CameraFeedModel: NSObject {
 
     /// Captures the most recent camera frame as a JPEG (≈100 KB). Returns nil if camera not running.
     func captureFrame() -> Data? {
-        guard let pb = cameraFeedLatestBufferGet() else { return nil }
+        guard let pb = cameraFeedStore.getBuffer() else { return nil }
         #if os(macOS)
         let ci = CIImage(cvPixelBuffer: pb)
         guard let cg = CIContext().createCGImage(ci, from: ci.extent) else { return nil }
@@ -132,32 +141,56 @@ extension CameraFeedModel: AVCaptureVideoDataOutputSampleBufferDelegate {
         from connection: AVCaptureConnection
     ) {
         guard let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        cameraFeedLatestBufferSet(pb)
+        cameraFeedStore.setBuffer(pb)
+
+        // Run body pose detection on the frame
+        cameraFeedStore.getDetector()?.detectPose(in: pb)
     }
 }
 
-// MARK: - File-private buffer storage (delegate and main actor; no actor isolation)
+// MARK: - Thread-safe storage (accessed from camera frame queue, not actor-isolated)
 
-private let _cameraFeedBufferLock = NSLock()
-private var _cameraFeedLatestBuffer: CVPixelBuffer?
+/// Lock-guarded storage for cross-thread access from the AVCapture delegate.
+private final class CameraFeedStore: @unchecked Sendable {
+    private let bufferLock = NSLock()
+    private var latestBuffer: CVPixelBuffer?
 
-private func cameraFeedLatestBufferSet(_ pb: CVPixelBuffer?) {
-    _cameraFeedBufferLock.lock()
-    _cameraFeedLatestBuffer = pb
-    _cameraFeedBufferLock.unlock()
+    private let detectorLock = NSLock()
+    private var poseDetector: BodyPoseDetector?
+
+    func setBuffer(_ pb: CVPixelBuffer?) {
+        bufferLock.lock()
+        latestBuffer = pb
+        bufferLock.unlock()
+    }
+
+    func getBuffer() -> CVPixelBuffer? {
+        bufferLock.lock()
+        defer { bufferLock.unlock() }
+        return latestBuffer
+    }
+
+    func clearBuffer() {
+        bufferLock.lock()
+        latestBuffer = nil
+        bufferLock.unlock()
+    }
+
+    func setDetector(_ detector: BodyPoseDetector?) {
+        detectorLock.lock()
+        poseDetector = detector
+        detectorLock.unlock()
+    }
+
+    func getDetector() -> BodyPoseDetector? {
+        detectorLock.lock()
+        defer { detectorLock.unlock() }
+        return poseDetector
+    }
 }
 
-private func cameraFeedLatestBufferGet() -> CVPixelBuffer? {
-    _cameraFeedBufferLock.lock()
-    defer { _cameraFeedBufferLock.unlock() }
-    return _cameraFeedLatestBuffer
-}
-
-private func cameraFeedLatestBufferClear() {
-    _cameraFeedBufferLock.lock()
-    _cameraFeedLatestBuffer = nil
-    _cameraFeedBufferLock.unlock()
-}
+/// Shared instance — safe to access from any thread/queue.
+private let cameraFeedStore = CameraFeedStore()
 
 // MARK: - NSImage JPEG helper
 

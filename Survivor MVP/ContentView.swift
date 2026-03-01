@@ -15,20 +15,26 @@ struct ContentView: View {
     @State private var cameraPreviewEnabled = true
 
     var body: some View {
-        HStack(spacing: 0) {
+        ZStack(alignment: .trailing) {
+            // Camera fills the full window
             cameraPane
-                .frame(minWidth: 420, maxWidth: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            Divider()
-
+            // Floating frosted-glass sidebar
             VoicePanel(orbModel: voiceOrbModel)
-                .frame(width: 340)
+                .frame(width: 320)
+                .background(
+                    .ultraThinMaterial.opacity(0.82),
+                    in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+                )
+                .shadow(color: .black.opacity(0.25), radius: 24, x: -4, y: 0)
+                .padding(16)
         }
-        .frame(minWidth: 860, minHeight: 580)
+        .frame(minWidth: 700, minHeight: 500)
         .onAppear {
             cameraModel.start()
             voiceOrbModel.copilotModel = model
-            model.cameraModel = cameraModel   // give model access to camera frames
+            model.cameraModel = cameraModel
             Task { await voiceOrbModel.autoGreet() }
         }
         .onDisappear { cameraModel.stop() }
@@ -53,16 +59,16 @@ struct ContentView: View {
                 }
             }
 
-            // Camera toggle — top-right corner
+            // Camera toggle — top-left so it doesn't overlap the panel
             VStack {
                 HStack {
-                    Spacer()
                     Toggle("", isOn: $cameraPreviewEnabled)
                         .toggleStyle(.switch)
                         .labelsHidden()
                         .padding(10)
                         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
                         .padding(12)
+                    Spacer()
                 }
                 Spacer()
             }

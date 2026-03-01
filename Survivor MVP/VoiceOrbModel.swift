@@ -15,7 +15,7 @@ final class VoiceOrbModel {
 
     weak var copilotModel: CrisisCopilotModel?
 
-    private var audioEngine = AVAudioEngine()
+    private var audioEngine = AVAudioEngine() // recreated each session
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
@@ -53,6 +53,8 @@ final class VoiceOrbModel {
     }
 
     private func startRecording() {
+        // Fresh engine each session — avoids stale input node format (sampleRate = 0 crash)
+        audioEngine = AVAudioEngine()
         recognitionTask?.cancel()
         recognitionTask = nil
         partialTranscript = ""
@@ -74,8 +76,14 @@ final class VoiceOrbModel {
         }
 
         let inputNode = audioEngine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buf, _ in
+
+        // Validate format — sampleRate can be 0 before the engine warms up
+        var format = inputNode.outputFormat(forBus: 0)
+        if format.sampleRate == 0 || format.channelCount == 0 {
+            format = AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1)!
+        }
+
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { buf, _ in
             req.append(buf)
         }
 
@@ -105,8 +113,9 @@ final class VoiceOrbModel {
     }
 
     private func cleanupEngine() {
-        audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
+        audioEngine.stop()
+        audioEngine.reset()
         recognitionRequest?.endAudio()
         recognitionTask?.cancel()
         recognitionRequest = nil

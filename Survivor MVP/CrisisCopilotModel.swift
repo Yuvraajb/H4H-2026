@@ -91,7 +91,12 @@ class CrisisCopilotModel {
     func sendUserMessage(_ text: String) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
+        if state == .idle {
+            state = .active
+            suggestedActions = Self.suggestedActions(for: scenario)
+        }
         messages.append(ChatMessage(role: .user, text: t, timestamp: Date()))
+        draftText = ""
 
         Task { @MainActor in
             let result = await backendService.sendMessage(sessionId: sessionId, text: t)

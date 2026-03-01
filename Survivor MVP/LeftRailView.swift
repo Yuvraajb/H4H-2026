@@ -17,19 +17,19 @@ struct CrisisCopilotPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Compact header only — nothing fixed in the chat area below
+            panelHeader
+
+            // Chat area: only the conversation (no fixed content)
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        panelTitleAndStatus
-                        panelCameraToggle
-                        panelPrimaryButton
-                        if model.state == .active {
-                            panelQuickActions
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        ForEach(model.messages) { msg in
+                            PanelMessageBubble(message: msg)
+                                .id(msg.id)
                         }
-                        panelMessageList
-                        panelSuggestedActions
-                        panelHelperText
                     }
+                    .padding(.vertical, 8)
                 }
                 .onChange(of: model.messages.count) { _, _ in
                     if let last = model.messages.last {
@@ -39,24 +39,88 @@ struct CrisisCopilotPanelView: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            // Composer: type here, AI responds
             panelComposerBar
+
+            // Controls below chat (not inside the conversation)
+            panelFooter
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
-    private var panelTitleAndStatus: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Crisis Copilot")
-                .font(.title)
-                .fontWeight(.bold)
-            Text(panelStatusLabel)
-                .font(.caption)
-                .fontWeight(.medium)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(panelStatusColor.opacity(0.3), in: Capsule())
+    private var panelHeader: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 12) {
+                Text("Crisis Copilot")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Text(panelStatusLabel)
+                    .font(.caption2)
+                    .fontWeight(.medium)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(panelStatusColor.opacity(0.3), in: Capsule())
+                Spacer(minLength: 0)
+                Toggle("Camera", isOn: $cameraPreviewEnabled)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
         }
+        .padding(.bottom, 8)
+    }
+
+    private var panelFooter: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Group {
+                switch model.state {
+                case .idle:
+                    Button(action: { model.startEmergency() }) {
+                        Label("Start Emergency", systemImage: "play.fill")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                case .active:
+                    HStack(spacing: 8) {
+                        Button("Simulate voice", action: { model.simulateVoiceInput() })
+                            .buttonStyle(.bordered)
+                        Button("Mark Resolved", action: { model.markResolved() })
+                            .buttonStyle(.bordered)
+                        Button("Clear", action: { model.clearChat() })
+                            .buttonStyle(.bordered)
+                    }
+                case .resolved:
+                    Button(action: { model.reset() }) {
+                        Label("Reset", systemImage: "arrow.counterclockwise")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                }
+            }
+            if !model.suggestedActions.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(model.suggestedActions, id: \.self) { action in
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("•")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text(action)
+                                .font(.caption)
+                        }
+                    }
+                }
+            }
+            Text("This is a demo. If life-threatening, call emergency services.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.top, 12)
     }
 
     private var panelStatusLabel: String {
@@ -75,87 +139,6 @@ struct CrisisCopilotPanelView: View {
         }
     }
 
-    private var panelCameraToggle: some View {
-        Toggle("Camera preview", isOn: $cameraPreviewEnabled)
-            .toggleStyle(.switch)
-    }
-
-    private var panelPrimaryButton: some View {
-        Group {
-            switch model.state {
-            case .idle:
-                Button(action: { model.startEmergency() }) {
-                    Label("Start Emergency", systemImage: "play.fill")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                }
-                .buttonStyle(.borderedProminent)
-            case .active:
-                Button(action: { model.simulateVoiceInput() }) {
-                    Label("Simulate Voice Input", systemImage: "mic.fill")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                }
-                .buttonStyle(.borderedProminent)
-            case .resolved:
-                Button(action: { model.reset() }) {
-                    Label("Reset", systemImage: "arrow.counterclockwise")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                }
-                .buttonStyle(.borderedProminent)
-            }
-        }
-        .controlSize(.large)
-    }
-
-    private var panelQuickActions: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Quick actions")
-                .font(.headline)
-            Button("Mark Resolved", action: { model.markResolved() })
-                .buttonStyle(.bordered)
-            Button("Clear Chat", action: { model.clearChat() })
-                .buttonStyle(.bordered)
-        }
-    }
-
-    private var panelMessageList: some View {
-        LazyVStack(alignment: .leading, spacing: 12) {
-            ForEach(model.messages) { msg in
-                PanelMessageBubble(message: msg)
-                    .id(msg.id)
-            }
-        }
-    }
-
-    private var panelSuggestedActions: some View {
-        Group {
-            if !model.suggestedActions.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Suggested actions")
-                        .font(.headline)
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(model.suggestedActions, id: \.self) { action in
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text("•")
-                                    .foregroundStyle(.secondary)
-                                Text(action)
-                                    .font(.subheadline)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var panelHelperText: some View {
-        Text("This is a demo. If life-threatening, call emergency services.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-    }
-
     private var panelComposerBar: some View {
         HStack(alignment: .bottom, spacing: 12) {
             TextField("Type a message…", text: Binding(get: { model.draftText }, set: { model.draftText = $0 }), axis: .vertical)
@@ -164,6 +147,7 @@ struct CrisisCopilotPanelView: View {
                 .lineLimit(1...6)
                 .onSubmit { panelSendIfPossible() }
                 .focused($isComposerFocused)
+                .submitLabel(.send)
 
             Button(action: { model.simulateVoiceInput() }) {
                 Image(systemName: "mic.fill")

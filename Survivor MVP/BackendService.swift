@@ -32,7 +32,8 @@ final class BackendService {
     private let session: URLSession
     private let decoder: JSONDecoder
 
-    private static let defaultBaseURLValue = "http://localhost:8000"
+    /// Use 127.0.0.1 so simulator can reach backend (HTTP allowed via NSAllowsLocalNetworking in Info.plist).
+    private static let defaultBaseURLValue = "http://127.0.0.1:8000"
 
     init(baseURL: String? = nil) {
         let url = baseURL ?? Self.defaultBaseURLValue

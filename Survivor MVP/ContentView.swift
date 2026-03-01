@@ -2,8 +2,8 @@
 //  ContentView.swift
 //  Survivor MVP
 //
-//  Personal Doctor — macOS two-panel layout.
-//  Left: live camera preview. Right: chat + inline voice orb + text composer.
+//  Personal Doctor — voice-native macOS layout.
+//  Left: live camera. Right: read-only transcript + full animated voice orb.
 //
 
 import SwiftUI
@@ -17,28 +17,26 @@ struct ContentView: View {
     var body: some View {
         HStack(spacing: 0) {
             cameraPane
-                .frame(minWidth: 400, maxWidth: .infinity)
+                .frame(minWidth: 420, maxWidth: .infinity)
 
             Divider()
 
-            PersonalDoctorPanel(voiceOrbModel: voiceOrbModel)
-                .frame(width: 380)
+            VoicePanel(orbModel: voiceOrbModel)
+                .frame(width: 340)
         }
-        .frame(minWidth: 900, minHeight: 620)
+        .frame(minWidth: 860, minHeight: 580)
         .onAppear {
             cameraModel.start()
             voiceOrbModel.copilotModel = model
+            Task { await voiceOrbModel.autoGreet() }
         }
-        .onDisappear {
-            cameraModel.stop()
-        }
+        .onDisappear { cameraModel.stop() }
     }
 
     @ViewBuilder
     private var cameraPane: some View {
         ZStack {
-            Color.black
-                .ignoresSafeArea()
+            Color.black.ignoresSafeArea()
 
             if cameraPreviewEnabled, cameraModel.status == .running, let session = cameraModel.session {
                 CameraPreview(session: session)
@@ -85,204 +83,231 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Right panel
+// MARK: - Voice panel (right side)
 
-struct PersonalDoctorPanel: View {
+struct VoicePanel: View {
     @Environment(CrisisCopilotModel.self) private var model
-    var voiceOrbModel: VoiceOrbModel
-    @FocusState private var composerFocused: Bool
+    var orbModel: VoiceOrbModel
+
+    // Orb animation state
+    @State private var pulseUp = false
+    @State private var ringExpand = false
+    @State private var outerExpand = false
+    @State private var thinkingStart: Date? = nil
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Personal Doctor")
+                        .font(.headline)
+                    Text("Tap the orb to speak")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
             Divider()
-            chatArea
+
+            // Read-only conversation transcript
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        if model.messages.isEmpty {
+                            ProgressView()
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 48)
+                        }
+                        ForEach(model.messages) { msg in
+                            TranscriptBubble(message: msg)
+                                .id(msg.id)
+                        }
+                    }
+                    .padding(12)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onChange(of: model.messages.count) { _, _ in
+                    if let last = model.messages.last {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo(last.id, anchor: .bottom)
+                        }
+                    }
+                }
+            }
+
             Divider()
-            CompactVoiceOrb(model: voiceOrbModel)
-                .padding(.vertical, 10)
-            Divider()
-            composerBar
+
+            // Full animated orb
+            VStack(spacing: 18) {
+                TimelineView(.animation(minimumInterval: 1.0 / 60, paused: orbModel.orbState != .thinking)) { tl in
+                    let elapsed = thinkingStart.map { tl.date.timeIntervalSince($0) } ?? 0
+                    ZStack {
+                        // Outer ring
+                        Circle()
+                            .stroke(outerRingColor, lineWidth: 1.5)
+                            .frame(width: 150, height: 150)
+                            .scaleEffect(outerExpand ? 1.06 : 1.0)
+                            .rotationEffect(.degrees(
+                                orbModel.orbState == .thinking
+                                ? (elapsed * -225).truncatingRemainder(dividingBy: 360)
+                                : 0
+                            ))
+                            .opacity(orbModel.orbState != .idle ? 1 : 0)
+
+                        // Mid ring
+                        Circle()
+                            .stroke(midRingColor, lineWidth: 1.5)
+                            .frame(width: 124, height: 124)
+                            .scaleEffect(ringExpand ? 1.08 : 1.0)
+                            .rotationEffect(.degrees(
+                                orbModel.orbState == .thinking
+                                ? (elapsed * 360).truncatingRemainder(dividingBy: 360)
+                                : 0
+                            ))
+                            .opacity(orbModel.orbState != .idle ? 1 : 0)
+
+                        // Core orb
+                        Circle()
+                            .fill(orbGradient)
+                            .frame(width: 100, height: 100)
+                            .overlay(
+                                Circle().fill(LinearGradient(
+                                    colors: [.white.opacity(0.06), .clear],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                ))
+                            )
+                            .shadow(color: glowColor.opacity(0.5), radius: 20)
+                            .shadow(color: glowColor.opacity(0.15), radius: 50)
+                            .scaleEffect(pulseUp ? pulseTarget : 1.0)
+                    }
+                }
+                .frame(width: 160, height: 160)
+                .onTapGesture { orbModel.handleTap() }
+
+                Text(orbModel.statusText)
+                    .font(.caption)
+                    .tracking(1)
+                    .foregroundStyle(.secondary)
+                    .animation(.default, value: orbModel.statusText)
+
+                if let err = orbModel.errorText {
+                    Text(err)
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                }
+            }
+            .padding(.vertical, 28)
+            .frame(maxWidth: .infinity)
+            .onChange(of: orbModel.orbState) { _, newState in
+                withAnimation(.none) {
+                    pulseUp = false
+                    ringExpand = false
+                    outerExpand = false
+                }
+                if newState == .thinking { thinkingStart = Date() }
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(16))
+                    triggerAnimations(for: newState)
+                }
+            }
+            .onAppear { triggerAnimations(for: .idle) }
         }
         .background(.background)
     }
 
-    private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Personal Doctor")
-                    .font(.headline)
-                Text("Groq · ElevenLabs voice")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-    }
-
-    private var chatArea: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    if model.messages.isEmpty {
-                        Text("Tap the orb to speak, or type below.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 48)
-                    }
-                    ForEach(model.messages) { msg in
-                        MessageBubble(message: msg)
-                            .id(msg.id)
-                    }
-                }
-                .padding(12)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .onChange(of: model.messages.count) { _, _ in
-                if let last = model.messages.last {
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        proxy.scrollTo(last.id, anchor: .bottom)
-                    }
-                }
-            }
-        }
-    }
-
-    private var composerBar: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            TextField("Type a message…", text: Binding(
-                get: { model.draftText },
-                set: { model.draftText = $0 }
-            ), axis: .vertical)
-            .textFieldStyle(.plain)
-            .padding(10)
-            .lineLimit(1...5)
-            .onSubmit { sendText() }
-            .focused($composerFocused)
-
-            Button(action: sendText) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.title2)
-            }
-            .buttonStyle(.plain)
-            .disabled(model.draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-    }
-
-    private func sendText() {
-        let text = model.draftText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        model.sendUserMessage(text)
-    }
-}
-
-// MARK: - Compact inline voice orb
-
-private struct CompactVoiceOrb: View {
-    var model: VoiceOrbModel
-    @State private var pulseUp = false
-
-    var body: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(orbGradient)
-                    .frame(width: 46, height: 46)
-                    .shadow(color: glowColor.opacity(0.5), radius: 10)
-                    .scaleEffect(pulseUp ? pulseTarget : 1.0)
-                if model.orbState == .thinking {
-                    ProgressView()
-                        .scaleEffect(0.5)
-                        .tint(.white)
-                }
-            }
-            .onTapGesture { model.handleTap() }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(model.statusText)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .animation(.default, value: model.statusText)
-                if let err = model.errorText {
-                    Text(err)
-                        .font(.caption2)
-                        .foregroundStyle(.red)
-                        .lineLimit(2)
-                }
-            }
-
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .onChange(of: model.orbState) { _, _ in
-            withAnimation(.none) { pulseUp = false }
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(16))
-                withAnimation(pulseAnim) { pulseUp = true }
-            }
-        }
-        .onAppear {
-            withAnimation(pulseAnim) { pulseUp = true }
-        }
-    }
-
-    private var pulseAnim: Animation {
-        .easeInOut(duration: animDuration).repeatForever(autoreverses: true)
-    }
+    // MARK: - Animations
 
     private var pulseTarget: CGFloat {
-        switch model.orbState {
-        case .idle:      return 1.06
-        case .listening: return 1.14
-        case .speaking:  return 1.10
+        switch orbModel.orbState {
+        case .idle:      return 1.04
+        case .listening: return 1.06
+        case .speaking:  return 1.05
         case .thinking:  return 1.0
         }
     }
 
     private var animDuration: Double {
-        switch model.orbState {
+        switch orbModel.orbState {
         case .idle:      return 3.5
-        case .listening: return 0.7
-        case .speaking:  return 1.4
+        case .listening: return 0.9
+        case .speaking:  return 1.6
         case .thinking:  return 1.0
         }
     }
 
+    private func triggerAnimations(for state: VoiceOrbModel.OrbState) {
+        let anim = Animation.easeInOut(duration: animDuration).repeatForever(autoreverses: true)
+        let delay = Animation.easeInOut(duration: animDuration).delay(0.2).repeatForever(autoreverses: true)
+        switch state {
+        case .idle:
+            withAnimation(anim) { pulseUp = true }
+        case .listening:
+            withAnimation(anim)  { pulseUp = true; ringExpand = true }
+            withAnimation(delay) { outerExpand = true }
+        case .thinking:
+            break // TimelineView handles rotation
+        case .speaking:
+            withAnimation(anim)  { pulseUp = true; ringExpand = true }
+            withAnimation(delay) { outerExpand = true }
+        }
+    }
+
+    // MARK: - Colors
+
     private var orbGradient: RadialGradient {
-        switch model.orbState {
+        switch orbModel.orbState {
         case .idle:
             return RadialGradient(colors: [Color(red: 0.23, green: 0.23, blue: 0.42), Color(red: 0.10, green: 0.10, blue: 0.25)],
-                                  center: .init(x: 0.38, y: 0.36), startRadius: 0, endRadius: 23)
+                                  center: .init(x: 0.38, y: 0.36), startRadius: 0, endRadius: 50)
         case .listening:
             return RadialGradient(colors: [Color(red: 0.48, green: 0.10, blue: 0.16), Color(red: 0.24, green: 0, blue: 0.08)],
-                                  center: .init(x: 0.38, y: 0.36), startRadius: 0, endRadius: 23)
+                                  center: .init(x: 0.38, y: 0.36), startRadius: 0, endRadius: 50)
         case .thinking:
             return RadialGradient(colors: [Color(red: 0.35, green: 0.29, blue: 0.06), Color(red: 0.16, green: 0.13, blue: 0)],
-                                  center: .init(x: 0.38, y: 0.36), startRadius: 0, endRadius: 23)
+                                  center: .init(x: 0.38, y: 0.36), startRadius: 0, endRadius: 50)
         case .speaking:
             return RadialGradient(colors: [Color(red: 0.06, green: 0.29, blue: 0.19), Color(red: 0, green: 0.15, blue: 0.09)],
-                                  center: .init(x: 0.38, y: 0.36), startRadius: 0, endRadius: 23)
+                                  center: .init(x: 0.38, y: 0.36), startRadius: 0, endRadius: 50)
         }
     }
 
     private var glowColor: Color {
-        switch model.orbState {
+        switch orbModel.orbState {
         case .idle:      return Color(red: 0.42, green: 0.39, blue: 1.0)
         case .listening: return Color(red: 1.0,  green: 0.30, blue: 0.42)
         case .thinking:  return Color(red: 0.98, green: 0.78, blue: 0.20)
         case .speaking:  return Color(red: 0.30, green: 1.0,  blue: 0.57)
         }
     }
+
+    private var midRingColor: Color {
+        switch orbModel.orbState {
+        case .idle:      return .clear
+        case .listening: return Color(red: 1.0,  green: 0.30, blue: 0.42).opacity(0.35)
+        case .thinking:  return Color(red: 0.98, green: 0.78, blue: 0.20).opacity(0.50)
+        case .speaking:  return Color(red: 0.30, green: 1.0,  blue: 0.57).opacity(0.30)
+        }
+    }
+
+    private var outerRingColor: Color {
+        switch orbModel.orbState {
+        case .idle:      return .clear
+        case .listening: return Color(red: 1.0,  green: 0.30, blue: 0.42).opacity(0.15)
+        case .thinking:  return Color(red: 0.98, green: 0.78, blue: 0.20).opacity(0.18)
+        case .speaking:  return Color(red: 0.30, green: 1.0,  blue: 0.57).opacity(0.12)
+        }
+    }
 }
 
-// MARK: - Message bubble
+// MARK: - Transcript bubble (read-only)
 
-private struct MessageBubble: View {
+private struct TranscriptBubble: View {
     let message: ChatMessage
 
     var body: some View {
@@ -290,7 +315,7 @@ private struct MessageBubble: View {
             if message.role == .user { Spacer(minLength: 32) }
             VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 3) {
                 Text(message.text)
-                    .font(.body)
+                    .font(.callout)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(bubbleBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -313,5 +338,5 @@ private struct MessageBubble: View {
     ContentView()
         .environment(AppModel())
         .environment(CrisisCopilotModel())
-        .frame(width: 1000, height: 640)
+        .frame(width: 960, height: 620)
 }

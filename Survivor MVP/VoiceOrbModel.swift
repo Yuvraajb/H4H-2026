@@ -25,6 +25,15 @@ final class VoiceOrbModel {
 
     // MARK: - Public
 
+    /// Called once on launch — plays opening greeting via TTS and initialises the session.
+    func autoGreet() async {
+        guard let model = copilotModel else { return }
+        model.startEmergency()
+        // startEmergency appends the greeting message; grab it and speak it
+        let text = model.messages.last?.text ?? "Hey! I'm your personal doctor. What's going on?"
+        await playTTS(text)
+    }
+
     func handleTap() {
         switch orbState {
         case .idle:     Task { await requestAndStart() }

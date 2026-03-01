@@ -49,7 +49,7 @@ class CrisisCopilotModel {
     var draftText: String = ""
     var suggestedActions: [String] = []
 
-    private let greeting = "I'm Crisis Copilot. Tell me what's happening. If this is life-threatening, call emergency services now."
+    private let greeting = "Hey! I'm your personal doctor. What's going on — tell me what's happening and I'll help you through it."
     private let wrapUp = "Session marked resolved. If you need to report again, start a new emergency."
 
     private var sessionId: String?

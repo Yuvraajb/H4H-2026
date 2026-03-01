@@ -2,7 +2,7 @@
 //  CrisisCopilotModel.swift
 //  Survivor MVP
 //
-//  Personal Doctor — conversation state, messages, and backend integration.
+//  Survivor — conversation state, messages, and backend integration.
 //
 
 import SwiftUI
@@ -65,12 +65,12 @@ class CrisisCopilotModel {
     /// Set from ContentView so each user message can attach a camera frame.
     weak var cameraModel: CameraFeedModel?
 
-    private let greeting = "Hey, I'm your personal doctor. What's going on — tell me exactly what happened."
     private let wrapUp = "Session resolved. Stay calm — you've done great. Start a new session if anything changes."
 
     private var sessionId: String?
     private let backendService = BackendService()
 
+    /// Start session without speaking — user speaks first.
     func startEmergency() {
         state = .active
         messages = []
@@ -84,13 +84,6 @@ class CrisisCopilotModel {
         keyFindings = []
         extractedVitals = [:]
         sessionStartTime = Date()
-        messages.append(ChatMessage(role: .assistant, text: greeting))
-
-        Task { @MainActor in
-            if let result = await backendService.startSession() {
-                sessionId = result.sessionId
-            }
-        }
     }
 
     func markResolved() {
@@ -177,8 +170,5 @@ class CrisisCopilotModel {
 
     func clearChat() {
         messages = []
-        if state == .active {
-            messages.append(ChatMessage(role: .assistant, text: greeting))
-        }
     }
 }

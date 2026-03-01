@@ -8,11 +8,11 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>Personal Doctor uses the camera so the AI can see you during consultations.</string>
+	<string>Survivor uses the camera so the AI can see you during consultations.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Personal Doctor uses the microphone to listen to your voice so you can speak to the AI hands-free.</string>
+	<string>Survivor uses the microphone to listen to your voice so you can speak to the AI hands-free.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Personal Doctor uses speech recognition to transcribe your voice into text for the AI assistant.</string>
+	<string>Survivor uses speech recognition to transcribe your voice into text for the AI assistant.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

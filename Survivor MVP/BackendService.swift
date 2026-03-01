@@ -131,7 +131,7 @@ final class BackendService {
         }
     }
 
-    /// Sends an empty message to start a new session and get the opening greeting.
+    /// Sends an empty message to start a new session (used when AI greeted first; now session is created on first user message).
     func startSession() async -> (greeting: String, sessionId: String)? {
         let result = await sendMessage(sessionId: nil, text: "")
         guard let result else { return nil }

@@ -1,5 +1,5 @@
 """
-Personal Doctor FastAPI backend.
+Survivor FastAPI backend.
 - POST /api/chat      — conversation with vision-capable LLM; returns steps + image URLs
 - GET  /api/images    — Wikipedia image lookup for a query
 - GET/POST /api/tts   — ElevenLabs TTS proxy
@@ -32,14 +32,14 @@ async def lifespan(app: FastAPI):
     provider = os.getenv("LLM_PROVIDER", "groq").lower()
     groq_ok = bool(os.getenv("GROQ_API_KEY"))
     eleven_ok = bool(os.getenv("ELEVENLABS_API_KEY"))
-    print(f"[Personal Doctor] LLM={provider} groq={groq_ok} elevenlabs={eleven_ok}")
+    print(f"[Survivor] LLM={provider} groq={groq_ok} elevenlabs={eleven_ok}")
     # Pre-populate wikiHow image cache in the background so first requests are instant
     from services.wikihow_service import warmup as wikihow_warmup
     asyncio.create_task(wikihow_warmup())
     yield
 
 
-app = FastAPI(title="Personal Doctor API", lifespan=lifespan)
+app = FastAPI(title="Survivor API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -81,11 +81,10 @@ async def chat(req: ChatRequest):
     if not session_id:
         session_id = session_manager.create_session()
         if not message:
-            # Opening greeting (no image needed)
-            greeting = "Hey! I'm your personal doctor. What's going on — tell me what's happening and I'll help you through it."
+            # New session, no message yet — user speaks first; just create session and return minimal response.
             return ChatResponse(
                 response={
-                    "spoken_text": greeting,
+                    "spoken_text": "",
                     "phase": "questioning",
                     "steps": [],
                     "metadata": {"urgency": "low", "diagnosis": None, "call_emergency": False},

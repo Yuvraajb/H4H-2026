@@ -9,7 +9,7 @@ final class VoiceOrbModel {
     enum OrbState { case idle, listening, thinking, speaking }
 
     var orbState: OrbState = .idle
-    var statusText = "Tap orb to speak"
+    var statusText = "Tap to speak — I'm listening"
     var errorText: String? = nil
 
     weak var copilotModel: CrisisCopilotModel?
@@ -33,13 +33,8 @@ final class VoiceOrbModel {
         #endif
     }
 
-    /// Called once on launch — speaks the opening greeting and initialises the session.
-    func autoGreet() async {
-        guard let model = copilotModel else { return }
-        model.startEmergency()
-        let text = model.messages.last?.text ?? "Hey! I'm your personal doctor. What's going on?"
-        await playTTS(text)
-    }
+    /// No longer used — user speaks first; session starts on appear without AI greeting.
+    func autoGreet() async {}
 
     func handleTap() {
         switch orbState {
@@ -111,7 +106,7 @@ final class VoiceOrbModel {
         audioFile = nil   // flush + close the file
 
         guard let url else {
-            orbState = .idle; statusText = "Tap orb to speak"; return
+            orbState = .idle; statusText = "Tap to speak — I'm listening"; return
         }
 
         orbState = .thinking
@@ -160,7 +155,7 @@ final class VoiceOrbModel {
         let reply = model.messages.last(where: { $0.role == .assistant })?.text ?? ""
         if reply.isEmpty {
             orbState = .idle
-            statusText = "Tap orb to speak"
+            statusText = "Tap to speak — I'm listening"
         } else {
             await playTTS(reply)
         }
@@ -190,13 +185,13 @@ final class VoiceOrbModel {
         }
 
         orbState = .idle
-        statusText = "Tap orb to speak"
+        statusText = "Tap to speak — I'm listening"
     }
 
     private func stopPlayback() {
         audioPlayer?.stop()
         audioPlayer = nil
         orbState = .idle
-        statusText = "Tap orb to speak"
+        statusText = "Tap to speak — I'm listening"
     }
 }

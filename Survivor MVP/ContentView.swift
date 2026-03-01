@@ -2,7 +2,7 @@
 //  ContentView.swift
 //  Survivor MVP
 //
-//  Personal Doctor — voice-native macOS layout.
+//  Survivor — voice-native macOS layout.
 //  Left: live camera. Right: floating panel with full clinical UI.
 //
 
@@ -36,7 +36,7 @@ struct ContentView: View {
             voiceOrbModel.requestMicrophonePermissionIfNeeded()
             voiceOrbModel.copilotModel = model
             model.cameraModel = cameraModel
-            Task { await voiceOrbModel.autoGreet() }
+            model.startEmergency()
         }
         .onDisappear { cameraModel.stop() }
     }
@@ -142,7 +142,7 @@ struct VoicePanel: View {
             HStack(alignment: .top, spacing: 8) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
-                        Text("Personal Doctor")
+                        Text("Survivor")
                             .font(.headline)
                         UrgencyBadge(urgency: model.currentUrgency)
                     }
@@ -844,7 +844,20 @@ private struct StepCard: View {
     }
 }
 
-#Preview("Personal Doctor") {
+// MARK: - Panel background (visionOS: glass; macOS: material)
+struct PanelBackgroundModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        #if os(visionOS)
+        content
+            .glassBackgroundEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        #else
+        content
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        #endif
+    }
+}
+
+#Preview("Survivor") {
     ContentView()
         .environment(AppModel())
         .environment(CrisisCopilotModel())

@@ -1,5 +1,5 @@
 """
-LLM integration — Personal Doctor persona.
+LLM integration — Survivor persona.
 3-phase flow: questioning → assessment → treatment with step images.
 Vision: uses llama-4-scout (multimodal) when a camera frame is provided.
 """
